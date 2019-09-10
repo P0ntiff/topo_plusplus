@@ -991,9 +991,9 @@ public class LinkDiscoveryManager implements IOFMessageListener,
         removeFromMaintenanceQueue(nptDst);
 
         // Get statistics
-        List<OFStatistics> iofStats = getPortStatistics(iofSwitch, inPort)
+        List<OFStatistics> iofStats = getPortStatistics(iofSwitch, inPort);
         log.error("\n STAT GATHER TEST \n");
-        List<OFStatistics> remoteStats = getPortStatistics(remoteSwitch, remotePort)
+        List<OFStatistics> remoteStats = getPortStatistics(remoteSwitch, remotePort);
         log.error("\n STAT GATHER TEST 2 \n");
 
         // Consume this message
