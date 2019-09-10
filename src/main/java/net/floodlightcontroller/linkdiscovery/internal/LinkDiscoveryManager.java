@@ -593,7 +593,7 @@ public class LinkDiscoveryManager implements IOFMessageListener,
     }
 
     //*********************
-    //   OFMessage Listener
+    //   OFMessage Listen`er
     //*********************
 
     @Override
@@ -707,19 +707,15 @@ public class LinkDiscoveryManager implements IOFMessageListener,
             str+= Integer.toString(b, 16).toUpperCase();
         return str;
     }
-    int cnt = 0;
+
     private Command handleLldp(LLDP lldp, long sw, short inPort,
                                boolean isStandard, FloodlightContext cntx) {
     	// If LLDP is suppressed on this port, ignore received packet as well
+        // Or if it is malformed LLDP
         IOFSwitch iofSwitch = floodlightProvider.getSwitch(sw);
 
-        if (!isIncomingDiscoveryAllowed(sw, inPort, isStandard))
+        if (!isIncomingDiscoveryAllowed(sw, inPort, isStandard) || lldp.getPortId() == null || lldp.getPortId().getLength() != 3)
             return Command.STOP;
-
-        // If this is a malformed LLDP exit
-        if (lldp.getPortId() == null || lldp.getPortId().getLength() != 3) {
-            return Command.STOP;
-        }
 
         long myId = ByteBuffer.wrap(controllerTLV.getValue()).getLong();
         long otherId = 0;
@@ -984,7 +980,6 @@ public class LinkDiscoveryManager implements IOFMessageListener,
 
             addOrUpdateLink(reverseLink, reverseInfo);
         }
-
         // Remove the node ports from the quarantine and maintenance queues.
         NodePortTuple nptSrc = new NodePortTuple(lt.getSrc(),
                                                  lt.getSrcPort());
@@ -994,6 +989,12 @@ public class LinkDiscoveryManager implements IOFMessageListener,
         removeFromMaintenanceQueue(nptSrc);
         removeFromQuarantineQueue(nptDst);
         removeFromMaintenanceQueue(nptDst);
+
+        // Get statistics
+        List<OFStatistics> iofStats = getPortStatistics(iofSwitch, inPort)
+        log.error("\n STAT GATHER TEST \n");
+        List<OFStatistics> remoteStats = getPortStatistics(remoteSwitch, remotePort)
+        log.error("\n STAT GATHER TEST 2 \n");
 
         // Consume this message
         ctrLldpEol.updateCounterNoFlush();
@@ -2644,6 +2645,26 @@ public class LinkDiscoveryManager implements IOFMessageListener,
   
     }
 
-
+    //***************
+    // Statistics
+    //***************
+    public List<OFStatistics> getPortStatistics(IOFSwitch sw, int port){
+        Future<List<OFStatistics>> future;
+        List<OFStatistics> values = null;
+        OFPortStatisticsRequest req = new OFPortStatisticsRequest();
+        // Construct Req
+        req.setPortNumber(port);
+        req.setStatistics(Collections.singletonList((OFStatistics)req));
+        requestLength += specificReq.getLength();
+        req.setLengthU(requestLength);
+        try {
+            future = sw.queryStatistics(req);
+            values = future.get(10, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            log.error("Failure retrieving statistics from switch " + sw, e);
+        }
+    }
+        return values;
+    }
     
 }
