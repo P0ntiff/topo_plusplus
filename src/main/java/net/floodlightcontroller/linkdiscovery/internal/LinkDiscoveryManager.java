@@ -2648,13 +2648,13 @@ public class LinkDiscoveryManager implements IOFMessageListener,
     //***************
     // Statistics
     //***************
-    public List<OFStatistics> getPortStatistics(IOFSwitch sw, int port){
+    public List<OFStatistics> getPortStatistics(IOFSwitch sw, int port) {
         Future<List<OFStatistics>> future;
         List<OFStatistics> values = null;
         OFPortStatisticsRequest req = new OFPortStatisticsRequest();
         // Construct Req
         req.setPortNumber(port);
-        req.setStatistics(Collections.singletonList((OFStatistics)req));
+        req.setStatistics(Collections.singletonList((OFStatistics) req));
         requestLength += specificReq.getLength();
         req.setLengthU(requestLength);
         try {
@@ -2663,8 +2663,6 @@ public class LinkDiscoveryManager implements IOFMessageListener,
         } catch (Exception e) {
             log.error("Failure retrieving statistics from switch " + sw, e);
         }
-    }
         return values;
     }
-    
 }
