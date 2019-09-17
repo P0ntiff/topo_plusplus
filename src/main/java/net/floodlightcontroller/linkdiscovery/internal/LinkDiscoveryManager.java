@@ -996,16 +996,90 @@ public class LinkDiscoveryManager implements IOFMessageListener,
         removeFromMaintenanceQueue(nptDst);
 
         // Get statistics
-        log.error("\n STAT GATHER TEST \n");
-        List<OFStatistics> iofStats = getPortStatistics(iofSwitch, inPort);
-	    log.warn("Port Statistics: {}", iofStats);
-        List<OFStatistics> remoteStats = getPortStatistics(remoteSwitch, remotePort);
-        log.error("\n STAT GATHER TEST 2 \n" + remoteStats);
 
         // Consume this message
         ctrLldpEol.updateCounterNoFlush();
         return Command.STOP;
     }
+
+
+    //***********************************
+    //  TOPOGUARD++ METHODS - Statistics and Flow Conservation
+    //***********************************
+
+    /* Validate the statistics of a link agree on either side
+        @param ln link to investigate
+        @return True if statistics appear valid, else false
+     */
+    private boolean link_stats_validation(Link ln) {
+        IOFSwitch sw1 = floodlightProvider.getSwitch(ln.getSrc());
+        IOFSwitch sw2 = floodlightProvider.getSwitch(ln.getDst());
+
+        // Verify both ports are enabled
+        if (!sw1.portEnabled(ln.getSrcPort()) || !sw2.portEnabled(ln.getDstPort()) {
+            log.error("Invalid Link: Disabled Port between switch: {} and switch {}, on ports {} and {}",
+                    new Object[]{sw1.getStringId(),
+                            sw2.getStringId(),
+                            ln.getSrcPort(),
+                            ln.getDstPort()});
+            return false;
+        }
+
+        // Query port statistics from each switch
+        List<OFStatistics> sw1Stats= getPortStatistics(sw1, ln.getSrcPort());
+        List<OFStatistics> sw2Stats = getPortStatistics(sw2, ln.getDstPort());
+        log.warn("\n Retrieved {} from sw1 \n", sw1Stats.size());
+        log.warn("\n Retrieved {} from sw2 \n", sw2Stats.size());
+        //TODO: Implement comparison
+        return true;
+    }
+
+
+    public List<OFStatistics> getPortStatistics(IOFSwitch sw, short port) {
+        Future<List<OFStatistics>> future;
+        List<OFStatistics> values = null;
+        OFStatisticsRequest req = new OFStatisticsRequest();
+        req.setStatisticType(OFStatisticsType.PORT);
+        int requestLength = req.getLengthU();
+        if (sw == null) return values;
+
+        // Construct Port Req
+        OFPortStatisticsRequest portReq = new OFPortStatisticsRequest();
+        portReq.setPortNumber(port);
+        req.setStatistics(Collections.singletonList((OFStatistics)portReq));
+        requestLength += portReq.getLength();
+        req.setLengthU(requestLength);
+        try {
+            future = sw.queryStatistics(req);
+            values = future.get(10, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            log.error("Failure retrieving statistics from switch " + sw, e);
+        }
+        return values;
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     //***********************************
     //  Internal Methods - Port Status/ New Port Processing Related
@@ -2651,30 +2725,3 @@ public class LinkDiscoveryManager implements IOFMessageListener,
   
     }
 
-    //***************
-    // Statistics [GUARD++]
-    //***************
-    public List<OFStatistics> getPortStatistics(IOFSwitch sw, int port) {
-        Future<List<OFStatistics>> future;
-        List<OFStatistics> values = null;
-        OFStatisticsRequest req = new OFStatisticsRequest();
-        req.setStatisticType(OFStatisticsType.PORT);
-        int requestLength = req.getLengthU();
-        if (sw == null) return values;
-
-        // Construct Port Req
-        OFPortStatisticsRequest portReq = new OFPortStatisticsRequest();
-        portReq.setPortNumber(port);
-        req.setStatistics(Collections.singletonList((OFStatistics)portReq));
-        requestLength += portReq.getLength();
-        req.setLengthU(requestLength);
-        try {
-            future = sw.queryStatistics(req);
-            values = future.get(10, TimeUnit.SECONDS);
-        } catch (Exception e) {
-            log.error("Failure retrieving statistics from switch " + sw, e);
-        }
-
-        return values;
-    }
-}
