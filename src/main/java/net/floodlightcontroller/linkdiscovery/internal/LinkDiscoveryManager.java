@@ -121,6 +121,7 @@ import org.openflow.protocol.action.OFAction;
 import org.openflow.protocol.action.OFActionOutput;
 import org.openflow.protocol.statistics.OFPortStatisticsRequest;
 import org.openflow.protocol.statistics.OFStatistics;
+import org.openflow.protocol.statistics.OFStatisticsType;
 import org.openflow.util.HexString;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -2655,22 +2656,30 @@ public class LinkDiscoveryManager implements IOFMessageListener,
     public List<OFStatistics> getPortStatistics(IOFSwitch sw, int port) {
         Future<List<OFStatistics>> future;
         List<OFStatistics> values = null;
-        OFPortStatisticsRequest req = new OFPortStatisticsRequest();
-        // Construct Req
         
-        OFStatisticsRequest specificReq = new OFStatisticsRequest();
-        req.setPortNumber((short) port);
+        if (sw == null) return values;
         
         
-        specificReq.setStatistics(Collections.singletonList((OFStatistics) req));
-        int requestLength = specificReq.getLength();
-        specificReq.setLengthU(requestLength);
+        OFStatisticsRequest req = new OFStatisticsRequest();
+        req.setStatisticType(OFStatisticsType.PORT);
+        
+        int requestLength = req.getLengthU();
+        
+        OFPortStatisticsRequest specificReq = new OFPortStatisticsRequest();
+        specificReq.setPortNumber(OFPort.OFPP_NONE.getValue());
+        req.setStatistics(Collections.singletonList((OFStatistics)specificReq));
+        requestLength += specificReq.getLength();
+        
+
+        req.setLengthU(requestLength);
+        
         try {
-            future = sw.queryStatistics(specificReq);
+            future = sw.queryStatistics(req);
             values = future.get(10, TimeUnit.SECONDS);
         } catch (Exception e) {
             log.error("Failure retrieving statistics from switch " + sw, e);
         }
+
         return values;
     }
 }
