@@ -45,6 +45,7 @@ import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -114,9 +115,13 @@ import org.openflow.protocol.OFPacketOut;
 import org.openflow.protocol.OFPhysicalPort;
 import org.openflow.protocol.OFPhysicalPort.OFPortState;
 import org.openflow.protocol.OFPort;
+import org.openflow.protocol.OFStatisticsRequest;
 import org.openflow.protocol.OFType;
 import org.openflow.protocol.action.OFAction;
 import org.openflow.protocol.action.OFActionOutput;
+import org.openflow.protocol.statistics.OFPortStatisticsRequest;
+import org.openflow.protocol.statistics.OFStatistics;
+import org.openflow.protocol.statistics.OFStatisticsType;
 import org.openflow.util.HexString;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -991,11 +996,11 @@ public class LinkDiscoveryManager implements IOFMessageListener,
         removeFromMaintenanceQueue(nptDst);
 
         // Get statistics
-        List<OFStatistics> iofStats = getPortStatistics(iofSwitch, inPort);
-	log.warn("Port Statistics: {}", iofStats);
         log.error("\n STAT GATHER TEST \n");
+        List<OFStatistics> iofStats = getPortStatistics(iofSwitch, inPort);
+	    log.warn("Port Statistics: {}", iofStats);
         List<OFStatistics> remoteStats = getPortStatistics(remoteSwitch, remotePort);
-        log.error("\n STAT GATHER TEST 2 \n");
+        log.error("\n STAT GATHER TEST 2 \n" + remoteStats);
 
         // Consume this message
         ctrLldpEol.updateCounterNoFlush();
@@ -2652,16 +2657,16 @@ public class LinkDiscoveryManager implements IOFMessageListener,
     public List<OFStatistics> getPortStatistics(IOFSwitch sw, int port) {
         Future<List<OFStatistics>> future;
         List<OFStatistics> values = null;
-
         OFStatisticsRequest req = new OFStatisticsRequest();
         req.setStatisticType(OFStatisticsType.PORT);
         int requestLength = req.getLengthU();
+        if (sw == null) return values;
 
         // Construct Port Req
         OFPortStatisticsRequest portReq = new OFPortStatisticsRequest();
         portReq.setPortNumber(port);
         req.setStatistics(Collections.singletonList((OFStatistics)portReq));
-        requestLength += specificReq.getLength();
+        requestLength += portReq.getLength();
         req.setLengthU(requestLength);
         try {
             future = sw.queryStatistics(req);
@@ -2669,6 +2674,7 @@ public class LinkDiscoveryManager implements IOFMessageListener,
         } catch (Exception e) {
             log.error("Failure retrieving statistics from switch " + sw, e);
         }
+
         return values;
     }
 }
