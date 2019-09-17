@@ -996,9 +996,9 @@ public class LinkDiscoveryManager implements IOFMessageListener,
 
         // Get statistics
         List<OFStatistics> iofStats = getPortStatistics(iofSwitch, inPort);
-        log.error("\n STAT GATHER TEST \n");
+        log.error("\n STAT GATHER TEST \n " + iofStats);
         List<OFStatistics> remoteStats = getPortStatistics(remoteSwitch, remotePort);
-        log.error("\n STAT GATHER TEST 2 \n");
+        log.error("\n STAT GATHER TEST 2 \n" + remoteStats);
 
         // Consume this message
         ctrLldpEol.updateCounterNoFlush();
