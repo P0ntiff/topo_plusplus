@@ -993,7 +993,7 @@ public class LinkDiscoveryManager implements IOFMessageListener,
         removeFromMaintenanceQueue(nptSrc);
         removeFromQuarantineQueue(nptDst);
         removeFromMaintenanceQueue(nptDst);
-        
+
         // Consume this message
         ctrLldpEol.updateCounterNoFlush();
         return Command.STOP;
@@ -2700,4 +2700,6 @@ public class LinkDiscoveryManager implements IOFMessageListener,
         return cipher.doFinal(cipherText);
   
     }
+
+}
 
