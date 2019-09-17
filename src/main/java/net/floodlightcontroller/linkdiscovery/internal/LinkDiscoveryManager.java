@@ -2647,15 +2647,20 @@ public class LinkDiscoveryManager implements IOFMessageListener,
     }
 
     //***************
-    // Statistics
+    // Statistics [GUARD++]
     //***************
     public List<OFStatistics> getPortStatistics(IOFSwitch sw, int port) {
         Future<List<OFStatistics>> future;
         List<OFStatistics> values = null;
-        OFPortStatisticsRequest req = new OFPortStatisticsRequest();
-        // Construct Req
-        req.setPortNumber(port);
-        req.setStatistics(Collections.singletonList((OFStatistics) req));
+
+        OFStatisticsRequest req = new OFStatisticsRequest();
+        req.setStatisticType(OFStatisticsType.PORT);
+        int requestLength = req.getLengthU();
+
+        // Construct Port Req
+        OFPortStatisticsRequest portReq = new OFPortStatisticsRequest();
+        portReq.setPortNumber(port);
+        req.setStatistics(Collections.singletonList((OFStatistics)portReq));
         requestLength += specificReq.getLength();
         req.setLengthU(requestLength);
         try {
