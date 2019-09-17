@@ -996,7 +996,7 @@ public class LinkDiscoveryManager implements IOFMessageListener,
         removeFromMaintenanceQueue(nptDst);
 
         // Get statistics
-
+	boolean linkVerified = link_stats_validation(lt);
         // Consume this message
         ctrLldpEol.updateCounterNoFlush();
         return Command.STOP;
@@ -1016,7 +1016,7 @@ public class LinkDiscoveryManager implements IOFMessageListener,
         IOFSwitch sw2 = floodlightProvider.getSwitch(ln.getDst());
 
         // Verify both ports are enabled
-        if (!sw1.portEnabled(ln.getSrcPort()) || !sw2.portEnabled(ln.getDstPort()) {
+        if (!sw1.portEnabled(ln.getSrcPort()) || !sw2.portEnabled(ln.getDstPort())) {
             log.error("Invalid Link: Disabled Port between switch: {} and switch {}, on ports {} and {}",
                     new Object[]{sw1.getStringId(),
                             sw2.getStringId(),
@@ -1057,10 +1057,6 @@ public class LinkDiscoveryManager implements IOFMessageListener,
         }
         return values;
     }
-}
-
-
-
 
 
 
@@ -2724,4 +2720,6 @@ public class LinkDiscoveryManager implements IOFMessageListener,
         return cipher.doFinal(cipherText);
   
     }
+
+}
 
