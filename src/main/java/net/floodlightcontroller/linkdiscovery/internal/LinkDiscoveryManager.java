@@ -610,7 +610,7 @@ public class LinkDiscoveryManager implements IOFMessageListener,
                                            cntx);
             default:
                 break;
-        }
+       }
         return Command.CONTINUE;
     }
 
@@ -716,6 +716,7 @@ public class LinkDiscoveryManager implements IOFMessageListener,
                                boolean isStandard, FloodlightContext cntx) {
     	// If LLDP is suppressed on this port, ignore received packet as well
         // Or if it is malformed LLDP
+	log.warn("\n - GUARD+ LLDP ROUND - \n");
         IOFSwitch iofSwitch = floodlightProvider.getSwitch(sw);
         if (!isIncomingDiscoveryAllowed(sw, inPort, isStandard) || lldp.getPortId() == null || lldp.getPortId().getLength() != 3)
             return Command.STOP;
@@ -995,7 +996,7 @@ public class LinkDiscoveryManager implements IOFMessageListener,
 
         // Consume this message
         ctrLldpEol.updateCounterNoFlush();
-        return Command.STOP;
+        return Command.CONTINUE;
     }
 
 

@@ -468,7 +468,6 @@ public class LinkDiscoveryManager implements IOFMessageListener,
 
     /**
      * Get the LLDP timeout value in seconds
-     *
      * @return LLDP timeout value in seconds
      */
     public int getLldpTimeout() {
@@ -611,7 +610,7 @@ public class LinkDiscoveryManager implements IOFMessageListener,
                                            cntx);
             default:
                 break;
-        }
+       }
         return Command.CONTINUE;
     }
 
@@ -717,8 +716,8 @@ public class LinkDiscoveryManager implements IOFMessageListener,
                                boolean isStandard, FloodlightContext cntx) {
     	// If LLDP is suppressed on this port, ignore received packet as well
         // Or if it is malformed LLDP
+	log.warn("\n - GUARD+ LLDP ROUND - \n");
         IOFSwitch iofSwitch = floodlightProvider.getSwitch(sw);
-	log.warn("\n\n LLDP ROUND \n\n");
         if (!isIncomingDiscoveryAllowed(sw, inPort, isStandard) || lldp.getPortId() == null || lldp.getPortId().getLength() != 3)
             return Command.STOP;
 
@@ -995,11 +994,9 @@ public class LinkDiscoveryManager implements IOFMessageListener,
         removeFromQuarantineQueue(nptDst);
         removeFromMaintenanceQueue(nptDst);
 
-        // Get statistics
-	boolean linkVerified = link_stats_validation(lt);
         // Consume this message
         ctrLldpEol.updateCounterNoFlush();
-        return Command.STOP;
+        return Command.CONTINUE;
     }
 
 
@@ -1036,6 +1033,7 @@ public class LinkDiscoveryManager implements IOFMessageListener,
 
 
     public List<OFStatistics> getPortStatistics(IOFSwitch sw, short port) {
+
         Future<List<OFStatistics>> future;
         List<OFStatistics> values = null;
         OFStatisticsRequest req = new OFStatisticsRequest();
@@ -1057,24 +1055,6 @@ public class LinkDiscoveryManager implements IOFMessageListener,
         }
         return values;
     }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
     //***********************************

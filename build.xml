@@ -75,6 +75,7 @@
         <include name="findbugs-annotations-2.0.1.jar" />
         <include name="findbugs-jsr305-2.0.1.jar" />
         <include name="derby-10.9.1.0.jar"/>
+	<include name="gson-2.6.2.jar" />
     </patternset>
 
     <path id="classpath">
