@@ -717,7 +717,6 @@ public class LinkDiscoveryManager implements IOFMessageListener,
     	// If LLDP is suppressed on this port, ignore received packet as well
         // Or if it is malformed LLDP
         IOFSwitch iofSwitch = floodlightProvider.getSwitch(sw);
-	log.warn("\n\n LLDP ROUND \n\n");
         if (!isIncomingDiscoveryAllowed(sw, inPort, isStandard) || lldp.getPortId() == null || lldp.getPortId().getLength() != 3)
             return Command.STOP;
 
