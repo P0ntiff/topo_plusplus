@@ -51,12 +51,10 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
     
 //- - -
 
-
 	@Override
 	public Command receive(IOFSwitch sw, OFMessage msg, FloodlightContext cntx) {
 		if(msg.getType().equals(OFType.PACKET_IN)) {
 			Ethernet eth = IFloodlightProviderService.bcStore.get(cntx, IFloodlightProviderService.CONTEXT_PI_PAYLOAD);
-
 			if(eth.getPayload() instanceof BSN) {
 				BSN bsn = (BSN) eth.getPayload();
 				if(bsn == null || bsn.getPayload() == null) return Command.STOP;
@@ -66,13 +64,12 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 				return verify_lldp_link((LLDP) eth.getPayload(), sw, (OFPacketIn) msg, cntx);
 			}
 		}
-		return Command.STOP;
+		return Command.CONTINUE;
 	}
 
 	public Command verify_lldp_link(LLDP lldp, IOFSwitch sw, OFPacketIn msg, FloodlightContext cntx) {
 		get_links();
-		int inPort = (int) msg.getInPort();
-		StatLink l = switchMap.get(sw.getStringId()).get(inPort);
+		StatLink l = switchMap.get(sw.getStringId()).get((int) msg.getInPort());
 		if(l == null) {
 			log.error("Null StatLink");
 			return Command.STOP;
@@ -85,31 +82,30 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 			BufferedReader srcStatRequest = makeWebRequest("/wm/core/switch/" + l.src_switch + "/port/json");
 			BufferedReader dstStatRequest = makeWebRequest("/wm/core/switch/" + l.dst_switch + "/port/json");
 			log.warn("\n\nParsing Stats\n");
-	    		PortReply srcPortStats = gson.fromJson(srcStatRequest, PortReply.class);
-	    		PortReply dstPortStats = gson.fromJson(dstStatRequest, PortReply.class);
+			PortReply srcPortStats = gson.fromJson(srcStatRequest, PortReply.class);
+			PortReply dstPortStats = gson.fromJson(dstStatRequest, PortReply.class);
 			log.warn("\n\nFormalizing Stats\n");
-	    		PortStat srcPort = srcPortStats.port_reply[0].getPortStat(String.valueOf(l.src_port));
-	    		PortStat dstPort = dstPortStats.port_reply[0].getPortStat(String.valueOf(l.dst_port));
+			PortStat srcPort = srcPortStats.port_reply[0].getPortStat(String.valueOf(l.src_port));
+			PortStat dstPort = dstPortStats.port_reply[0].getPortStat(String.valueOf(l.dst_port));
 	    	
-	    		log.warn("Link between switches ({}, {}) on ports ({}, {}) reports {}B sent to {}B received", 
-	    			new Object[] {l.src_switch, 
-	    					l.dst_switch, 
-	    					l.src_port, 
-	    					l.dst_port, 
-	    					srcPort.transmit_bytes, 
-	    					dstPort.receive_bytes
-	    			});
-		    	//TODO set threshhold, 1000 is giga arbitrary
-		    	if(Math.abs(srcPort.transmit_bytes - dstPort.receive_bytes) > 1000) {
-		    		log.warn("SUSPICIOUS LINK STATISTICS, DIFFERENCE OF {}", Math.abs(srcPort.transmit_bytes - dstPort.receive_bytes));
-		    	}
+			log.warn("Link between switches ({}, {}) on ports ({}, {}) reports {}B sent to {}B received",
+				new Object[] {l.src_switch,
+						l.dst_switch,
+						l.src_port,
+						l.dst_port,
+						srcPort.transmit_bytes,
+						dstPort.receive_bytes
+				});
+			//TODO set threshhold, 1000 is giga arbitrary
+			if(Math.abs(srcPort.transmit_bytes - dstPort.receive_bytes) > 1000) {
+				log.warn("SUSPICIOUS LINK STATISTICS, DIFFERENCE OF {}", Math.abs(srcPort.transmit_bytes - dstPort.receive_bytes));
+			}
 		} catch (Exception e) {
 			log.warn("ERROR: verify_lldp_link {}", e);
 		}
 		return Command.STOP;
 	}
-	
-	
+
 	public static BufferedReader makeWebRequest(String path) throws IOException {
 		URL url = new URL("http://" + ipAddress + ":" + port + path);
 		URLConnection con = url.openConnection();

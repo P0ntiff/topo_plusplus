@@ -51,8 +51,6 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
-
-
 import net.floodlightcontroller.core.FloodlightContext;
 import net.floodlightcontroller.core.HAListenerTypeMarker;
 import net.floodlightcontroller.core.IFloodlightProviderService;
@@ -621,7 +619,7 @@ public class LinkDiscoveryManager implements IOFMessageListener,
 
     @Override
     public boolean isCallbackOrderingPostreq(OFType type, String name) {
-        return false;
+        return (type.equals(OFType.PACKET_IN) && name.equals("linkdiscovery"));
     }
 
     //Retrieve the quartile value from an array
@@ -994,7 +992,7 @@ public class LinkDiscoveryManager implements IOFMessageListener,
         removeFromQuarantineQueue(nptDst);
         removeFromMaintenanceQueue(nptDst);
 
-        // Consume this message
+        // Consume this message, but pass it onto LinkVerifier
         ctrLldpEol.updateCounterNoFlush();
         return Command.CONTINUE;
     }
