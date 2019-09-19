@@ -18,16 +18,12 @@ import net.floodlightcontroller.core.IOFSwitch;
 import net.floodlightcontroller.core.module.FloodlightModuleContext;
 import net.floodlightcontroller.core.module.FloodlightModuleException;
 import net.floodlightcontroller.core.module.IFloodlightService;
-import net.floodlightcontroller.linkdiscovery.internal.LinkDiscoveryManager;
 import net.floodlightcontroller.packet.*;
-import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLConnection;
-import java.nio.ByteBuffer;
 import java.util.LinkedList;
 import java.util.List;
 import com.google.gson.Gson;
@@ -82,23 +78,40 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 			BufferedReader srcStatRequest = makeWebRequest("/wm/core/switch/" + l.src_switch + "/port/json");
 			BufferedReader dstStatRequest = makeWebRequest("/wm/core/switch/" + l.dst_switch + "/port/json");
 			log.warn("\n\nParsing Stats\n");
-			PortReply srcPortStats = gson.fromJson(srcStatRequest, PortReply.class);
-			PortReply dstPortStats = gson.fromJson(dstStatRequest, PortReply.class);
+			@SuppressWarnings("unchecked")
+			PortStat[] srcPortsStats = ((Map<String,PortStat[]>) gson.fromJson(srcStatRequest, new TypeToken<Map<String,PortStat[]>>() {}.getType())).get(l.src_switch);
+			@SuppressWarnings("unchecked")
+			PortStat[] dstPortsStats = ((Map<String,PortStat[]>) gson.fromJson(dstStatRequest, new TypeToken<Map<String,PortStat[]>>() {}.getType())).get(l.dst_switch);
 			log.warn("\n\nFormalizing Stats\n");
-			PortStat srcPort = srcPortStats.port_reply[0].getPortStat(String.valueOf(l.src_port));
-			PortStat dstPort = dstPortStats.port_reply[0].getPortStat(String.valueOf(l.dst_port));
+			PortStat srcPort = null, dstPort = null;
+			for (PortStat p : srcPortsStats) {
+	    		if (p.portNumber.equals(String.valueOf(l.src_port))) {
+	    			srcPort = p;
+	    			break;
+	    		}
+	    	}
+			
+			for (PortStat p : dstPortsStats) {
+	    		if (p.portNumber.equals(String.valueOf(l.dst_port))) {
+	    			dstPort = p;
+	    			break;
+	    		}
+	    	}
 	    	
 			log.warn("Link between switches ({}, {}) on ports ({}, {}) reports {}B sent to {}B received",
 				new Object[] {l.src_switch,
 						l.dst_switch,
 						l.src_port,
 						l.dst_port,
-						srcPort.transmit_bytes,
-						dstPort.receive_bytes
+						srcPort.transmitBytes,
+						dstPort.receiveBytes
 				});
+			//TODO the is only flow direction, we should also consider the other direction (ie, dst -> src)
+			
+			
 			//TODO set threshhold, 1000 is giga arbitrary
-			if(Math.abs(srcPort.transmit_bytes - dstPort.receive_bytes) > 1000) {
-				log.warn("SUSPICIOUS LINK STATISTICS, DIFFERENCE OF {}", Math.abs(srcPort.transmit_bytes - dstPort.receive_bytes));
+			if(Math.abs(srcPort.transmitBytes - dstPort.receiveBytes) > 1000) {
+				log.warn("SUSPICIOUS LINK STATISTICS, DIFFERENCE OF {}", Math.abs(srcPort.transmitBytes - dstPort.receiveBytes));
 			}
 		} catch (Exception e) {
 			log.warn("ERROR: verify_lldp_link {}", e);
@@ -233,19 +246,19 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 	}
 
 	public class PortStat {
-	
-		public String port_number;
-		public long receive_packets;
-		public long transmit_packets;
-		public long receive_bytes;
-		public long transmit_bytes;
-		public long receive_dropped;
-		public long transmit_dropped;
-		public long receive_errors;
-		public long transmit_errors;
-		public long receive_frame_errors;
-		public long receive_overrun_errors;
-		public long receive_CRC_errors;
+
+		public String portNumber; // 1,2,3 etc or "local"
+		public long receivePackets;
+		public long transmitPackets;
+		public long receiveBytes;
+		public long transmitBytes;
+		public long receiveDropped;
+		public long transmitDropped;
+		public long receiveErrors;
+		public long transmitErrors;
+		public long receiveFrameErrors;
+		public long receiveOverrunErrors;
+		public long receiveCRCErrors;
 		public long collisions;
 		
 		public PortStat() {
@@ -257,29 +270,29 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 			
 			sb.append("---------- port statistics --------");
 			sb.append("\nport_number: ");
-			sb.append(port_number);
+			sb.append(portNumber);
 			sb.append("\nreceive_packets: ");
-			sb.append(receive_packets);
+			sb.append(receivePackets);
 			sb.append("\ntransmit_packets: ");
-			sb.append(transmit_packets);
+			sb.append(transmitPackets);
 			sb.append("\nreceive_bytes: ");
-			sb.append(receive_bytes);
+			sb.append(receiveBytes);
 			sb.append("\ntransmit_bytes: ");
-			sb.append(transmit_bytes);
+			sb.append(transmitBytes);
 			sb.append("\nreceive_dropped: ");
-			sb.append(receive_dropped);
+			sb.append(receiveDropped);
 			sb.append("\ntransmit_dropped: ");
-			sb.append(transmit_dropped);
+			sb.append(transmitDropped);
 			sb.append("\nreceive_errors: ");
-			sb.append(receive_errors);
+			sb.append(receiveErrors);
 			sb.append("\ntransmit_errors: ");
-			sb.append(transmit_errors);
+			sb.append(transmitErrors);
 			sb.append("\nreceive_frame_errors: ");
-			sb.append(receive_frame_errors);
+			sb.append(receiveFrameErrors);
 			sb.append("\nreceive_overrun_errors: ");
-			sb.append(receive_overrun_errors);
+			sb.append(receiveOverrunErrors);
 			sb.append("\nreceive_CRC_errors: ");
-			sb.append(receive_CRC_errors);
+			sb.append(receiveCRCErrors);
 			sb.append("\ncollisions: ");
 			sb.append(collisions);
 			sb.append("\n---------- end --------");
@@ -288,29 +301,29 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 		}
 	}
 
-	public class PortReplySpecifics {
-		
-		public String version;
-		public PortStat[] port;
-		
-		public PortReplySpecifics() {
-			//nothing for the moment;
-		}
-		
-		public PortStat getPortStat(String portNum) {
-			for (PortStat p : port) {
-				if (p.port_number.equals(portNum)) return p;
-			}
-			return null;
-		}
-	}
-	
-	public class PortReply {
-
-		public PortReplySpecifics[] port_reply;
-		
-		public PortReply() {
-			// nothing for the moment
-		}
-	}
+//	public class PortReplySpecifics {
+//		
+//		public String version;
+//		public PortStat[] port;
+//		
+//		public PortReplySpecifics() {
+//			//nothing for the moment;
+//		}
+//		
+//		public PortStat getPortStat(String portNum) {
+//			for (PortStat p : port) {
+//				if (p.port_number.equals(portNum)) return p;
+//			}
+//			return null;
+//		}
+//	}
+//	
+//	public class PortReply {
+//
+//		public PortReplySpecifics[] port_reply;
+//		
+//		public PortReply() {
+//			// nothing for the moment
+//		}
+//	}
 }
