@@ -49,6 +49,7 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 
 	@Override
 	public Command receive(IOFSwitch sw, OFMessage msg, FloodlightContext cntx) {
+
 		if(msg.getType().equals(OFType.PACKET_IN)) {
 			Ethernet eth = IFloodlightProviderService.bcStore.get(cntx, IFloodlightProviderService.CONTEXT_PI_PAYLOAD);
 			if(eth.getPayload() instanceof BSN) {
@@ -59,60 +60,73 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 			} else if(eth.getPayload() instanceof LLDP) {
 				return verify_lldp_link((LLDP) eth.getPayload(), sw, (OFPacketIn) msg, cntx);
 			}
-		}
+		} 
 		return Command.CONTINUE;
 	}
 
 	public Command verify_lldp_link(LLDP lldp, IOFSwitch sw, OFPacketIn msg, FloodlightContext cntx) {
-		get_links();
-		StatLink l = switchMap.get(sw.getStringId()).get((int) msg.getInPort());
-		if(l == null) {
-			log.error("Null StatLink");
-			return Command.STOP;
+		int inPort = (int) msg.getInPort();
+		log.warn("\nSwitchMap Size {}, Msg from {} on Port {}, InMap {}",
+			new Object[] {switchMap.size(),
+					sw.getStringId(),
+					inPort,
+					switchMap.containsKey(sw.getStringId())
+			});
+
+		if(!switchMap.containsKey(sw.getStringId())) {
+			get_links();
 		}
-		log.warn("\n\n\n {} links into map, verifying switch {}\n\n\n", switchMap.size(), l.src_switch);
+
+		StatLink l = switchMap.get(sw.getStringId()).get(inPort);
+		if(l == null) {
+			log.error("\nNull StatLink");
+			return Command.STOP;
+		} 
+		log.warn("\n\n\n Verifying switch {}\n\n\n", l.src_switch);
 		try {
-		
-			log.warn("\n\nRequesting Stats\n");
+			log.warn("\n{}", l.toString());
+		/* HERE BE DRAGONS
+			log.warn("\n\nRequesting Stats @ {}\n", System.currentTimeMillis());
 			Gson gson = new Gson();
 			BufferedReader srcStatRequest = makeWebRequest("/wm/core/switch/" + l.src_switch + "/port/json");
+			log.warn("\n\nTime 1 @ {}\n", System.currentTimeMillis());
 			BufferedReader dstStatRequest = makeWebRequest("/wm/core/switch/" + l.dst_switch + "/port/json");
+			log.warn("\n\nTime 2 @ {}\n", System.currentTimeMillis());	
+
 			log.warn("\n\nParsing Stats\n");
 			@SuppressWarnings("unchecked")
 			PortStat[] srcPortsStats = ((Map<String,PortStat[]>) gson.fromJson(srcStatRequest, new TypeToken<Map<String,PortStat[]>>() {}.getType())).get(l.src_switch);
 			@SuppressWarnings("unchecked")
 			PortStat[] dstPortsStats = ((Map<String,PortStat[]>) gson.fromJson(dstStatRequest, new TypeToken<Map<String,PortStat[]>>() {}.getType())).get(l.dst_switch);
+
 			log.warn("\n\nFormalizing Stats\n");
 			PortStat srcPort = null, dstPort = null;
+
 			for (PortStat p : srcPortsStats) {
-	    		if (p.portNumber.equals(String.valueOf(l.src_port))) {
-	    			srcPort = p;
-	    			break;
+	    			if (p.portNumber.equals(String.valueOf(l.src_port))) {
+	    				srcPort = p;
+	    				break;
+	    			}
 	    		}
-	    	}
 			
 			for (PortStat p : dstPortsStats) {
-	    		if (p.portNumber.equals(String.valueOf(l.dst_port))) {
-	    			dstPort = p;
-	    			break;
+	    			if (p.portNumber.equals(String.valueOf(l.dst_port))) {
+	    				dstPort = p;
+	    				break;
+	    			}
 	    		}
-	    	}
-	    	
-			log.warn("Link between switches ({}, {}) on ports ({}, {}) reports {}B sent to {}B received",
-				new Object[] {l.src_switch,
-						l.dst_switch,
-						l.src_port,
-						l.dst_port,
-						srcPort.transmitBytes,
-						dstPort.receiveBytes
-				});
+			log.warn("\n\nFinished Stats\n");
+			log.warn("\n{}", l.toString());
+
+			*/
 			//TODO the is only flow direction, we should also consider the other direction (ie, dst -> src)
 			
-			
+			/*
 			//TODO set threshhold, 1000 is giga arbitrary
 			if(Math.abs(srcPort.transmitBytes - dstPort.receiveBytes) > 1000) {
 				log.warn("SUSPICIOUS LINK STATISTICS, DIFFERENCE OF {}", Math.abs(srcPort.transmitBytes - dstPort.receiveBytes));
-			}
+			} */
+
 		} catch (Exception e) {
 			log.warn("ERROR: verify_lldp_link {}", e);
 		}
@@ -133,7 +147,7 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 			List<StatLink> links = gson.fromJson(linkReq, new TypeToken<LinkedList<StatLink>>() {}.getType());
 			parse_links(links);
 		} catch (Exception e) {
-			log.warn("Error in Link Verification WebRequest {}", e);
+			log.warn("\n\nError in Link Verification WebRequest {}\n\n", e);
 		}
 	}
 
@@ -142,6 +156,12 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 			Map<Integer, StatLink> portMap = new HashMap<Integer, StatLink>();
 			portMap.put(l.src_port, l);
 			switchMap.put(l.src_switch, portMap);
+			log.warn("Parsing Link from ({} , {}) on ports ({}, {})",
+				new Object[] {l.src_switch,
+						l.dst_switch,
+						l.src_port,
+						l.dst_port,
+				});
 		}
 	}
 	

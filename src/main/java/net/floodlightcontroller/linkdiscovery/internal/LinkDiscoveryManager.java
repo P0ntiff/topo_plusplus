@@ -619,7 +619,7 @@ public class LinkDiscoveryManager implements IOFMessageListener,
 
     @Override
     public boolean isCallbackOrderingPostreq(OFType type, String name) {
-        return (type.equals(OFType.PACKET_IN) && name.equals("linkdiscovery"));
+        return (type.equals(OFType.PACKET_IN) && name.equals("linkverifier"));
     }
 
     //Retrieve the quartile value from an array
