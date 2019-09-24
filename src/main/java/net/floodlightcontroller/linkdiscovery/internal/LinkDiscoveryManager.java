@@ -17,12 +17,9 @@
 
 package net.floodlightcontroller.linkdiscovery.internal;
 
-import java.io.BufferedWriter;
-import java.io.File;
-import java.io.FileWriter;
+
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
-import java.io.Writer;
 import java.net.NetworkInterface;
 import java.net.SocketException;
 import java.nio.ByteBuffer;
@@ -36,7 +33,6 @@ import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -123,8 +119,8 @@ import org.openflow.protocol.statistics.OFStatisticsType;
 import org.openflow.util.HexString;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import com.google.common.primitives.Longs;
+
 
 //TopoGuard Extension
 import javax.crypto.*;
@@ -995,63 +991,6 @@ public class LinkDiscoveryManager implements IOFMessageListener,
         // Consume this message, but pass it onto LinkVerifier
         ctrLldpEol.updateCounterNoFlush();
         return Command.CONTINUE;
-    }
-
-
-    //***********************************
-    //  TOPOGUARD++ METHODS - Statistics and Flow Conservation
-    //***********************************
-
-    /* Validate the statistics of a link agree on either side
-        @param ln link to investigate
-        @return True if statistics appear valid, else false
-     */
-    private boolean link_stats_validation(Link ln) {
-        IOFSwitch sw1 = floodlightProvider.getSwitch(ln.getSrc());
-        IOFSwitch sw2 = floodlightProvider.getSwitch(ln.getDst());
-
-        // Verify both ports are enabled
-        if (!sw1.portEnabled(ln.getSrcPort()) || !sw2.portEnabled(ln.getDstPort())) {
-            log.error("Invalid Link: Disabled Port between switch: {} and switch {}, on ports {} and {}",
-                    new Object[]{sw1.getStringId(),
-                            sw2.getStringId(),
-                            ln.getSrcPort(),
-                            ln.getDstPort()});
-            return false;
-        }
-
-        // Query port statistics from each switch
-        List<OFStatistics> sw1Stats= getPortStatistics(sw1, ln.getSrcPort());
-        List<OFStatistics> sw2Stats = getPortStatistics(sw2, ln.getDstPort());
-        log.warn("\n Retrieved {} from sw1 \n", sw1Stats.size());
-        log.warn("\n Retrieved {} from sw2 \n", sw2Stats.size());
-        //TODO: Implement comparison
-        return true;
-    }
-
-
-    public List<OFStatistics> getPortStatistics(IOFSwitch sw, short port) {
-
-        Future<List<OFStatistics>> future;
-        List<OFStatistics> values = null;
-        OFStatisticsRequest req = new OFStatisticsRequest();
-        req.setStatisticType(OFStatisticsType.PORT);
-        int requestLength = req.getLengthU();
-        if (sw == null) return values;
-
-        // Construct Port Req
-        OFPortStatisticsRequest portReq = new OFPortStatisticsRequest();
-        portReq.setPortNumber(port);
-        req.setStatistics(Collections.singletonList((OFStatistics)portReq));
-        requestLength += portReq.getLength();
-        req.setLengthU(requestLength);
-        try {
-            future = sw.queryStatistics(req);
-            values = future.get(10, TimeUnit.SECONDS);
-        } catch (Exception e) {
-            log.error("Failure retrieving statistics from switch " + sw, e);
-        }
-        return values;
     }
 
 
