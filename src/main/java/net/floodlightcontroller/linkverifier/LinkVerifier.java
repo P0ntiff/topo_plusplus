@@ -39,10 +39,12 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 				BSN bsn = (BSN) eth.getPayload();
 				if(bsn == null || bsn.getPayload() == null) return Command.STOP;
 				if(bsn.getPayload() instanceof LLDP == false) return Command.CONTINUE;
+				//(new StatisticsGetter((LLDP) bsn.getPayload(), sw, (OFPacketIn) msg, cntx)).start();
 				(new InternalStatisticsGetter((LLDP) bsn.getPayload(), sw, (OFPacketIn) msg, cntx, floodlightProvider)).start();
 				return Command.STOP;
 			} else if(eth.getPayload() instanceof LLDP) {
-				(new StatisticsGetter((LLDP) eth.getPayload(), sw, (OFPacketIn) msg, cntx)).start();
+				//(new StatisticsGetter((LLDP) bsn.getPayload(), sw, (OFPacketIn) msg, cntx)).start();
+				(new InternalStatisticsGetter((LLDP) eth.getPayload(), sw, (OFPacketIn) msg, cntx, floodlightProvider)).start();
 			}
 		} 
 		return Command.CONTINUE;
