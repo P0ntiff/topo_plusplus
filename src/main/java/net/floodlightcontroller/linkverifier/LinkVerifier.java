@@ -1,18 +1,16 @@
 package net.floodlightcontroller.linkverifier;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Map;
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.util.*;
+
+import net.floodlightcontroller.core.*;
+import org.openflow.protocol.*;
+import org.openflow.protocol.action.OFAction;
+import org.openflow.util.HexString;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.openflow.protocol.OFMessage;
-import org.openflow.protocol.OFPacketIn;
-import org.openflow.protocol.OFType;
 import net.floodlightcontroller.core.module.IFloodlightModule;
-import net.floodlightcontroller.core.FloodlightContext;
-import net.floodlightcontroller.core.IFloodlightProviderService;
-import net.floodlightcontroller.core.IOFMessageListener;
-import net.floodlightcontroller.core.IOFSwitch;
 import net.floodlightcontroller.core.module.FloodlightModuleContext;
 import net.floodlightcontroller.core.module.FloodlightModuleException;
 import net.floodlightcontroller.core.module.IFloodlightService;
@@ -46,11 +44,11 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 				//(new StatisticsGetter((LLDP) bsn.getPayload(), sw, (OFPacketIn) msg, cntx)).start();
 				(new InternalStatisticsGetter((LLDP) eth.getPayload(), sw, (OFPacketIn) msg, cntx, floodlightProvider)).start();
 			}
-		} 
+		}
 		return Command.CONTINUE;
 	}
 
-	
+
     //***************
     // IFloodlightModule
     //***************

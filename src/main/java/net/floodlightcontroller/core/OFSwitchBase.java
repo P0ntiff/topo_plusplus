@@ -249,7 +249,7 @@ public abstract class OFSwitchBase implements IOFSwitch {
          * CALLER MUST HOLD WRITELOCK
          *
          * @param newPortsByNumber
-         * @throws IllegaalStateException if called without holding the
+         * @throws IllegalStateException if called without holding the
          * writelock
          */
         private void updatePortsWithNewPortsByNumber(
