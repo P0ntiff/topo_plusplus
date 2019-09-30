@@ -94,12 +94,6 @@ public class InternalStatisticsGetter extends Thread {
         return;
     }
 
-    //***********************************
-    //  TOPOGUARD++ METHODS - Statistics and Flow Conservation
-    //***********************************
-
-
-
     public List<OFStatistics> getPortStatistics(IOFSwitch sw, short port) {
 
         Future<List<OFStatistics>> future;

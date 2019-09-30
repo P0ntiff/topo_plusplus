@@ -60,7 +60,7 @@ public class ControlLinkProber implements IOFMessageListener, IOFSwitchListener,
 	protected class LinkProbeWorker implements Runnable {
 		long switchID = 0;
 		long delay;
-		
+
 		public LinkProbeWorker(long swID, long d){
 			switchID = swID;
 			delay = d;
@@ -240,13 +240,9 @@ public class ControlLinkProber implements IOFMessageListener, IOFSwitchListener,
 	public void switchAdded(long switchId) {
 		if(!delayStore.containsKey(switchId)){
 			Queue<Long> delays = new LinkedList<Long>();
-			
 			delayStore.put(switchId, delays);
 		}
-		
-		(new Thread(new LinkProbeWorker(switchId, 0))).start();			
-		
-		
+		(new Thread(new LinkProbeWorker(switchId, 0))).start();
 	}
 
 	@Override

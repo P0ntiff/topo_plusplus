@@ -3,10 +3,14 @@ package net.floodlightcontroller.linkverifier;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
+import com.google.common.hash.HashCode;
 import javafx.concurrent.Worker;
 import net.floodlightcontroller.core.*;
 import net.floodlightcontroller.learningswitch.LearningSwitch;
+import net.floodlightcontroller.util.MACAddress;
+import net.floodlightcontroller.util.MACAddressTest;
 import net.floodlightcontroller.virtualnetwork.IVirtualNetworkService;
 import org.openflow.protocol.*;
 import org.openflow.protocol.action.OFAction;
@@ -27,57 +31,44 @@ import net.floodlightcontroller.packet.*;
 public class HiddenPacket implements IOFMessageListener, IFloodlightModule<IFloodlightService> {
 
     // Instance Variables
+    public static final String MODULE_NAME = "hiddenpacketverifier";
     protected IFloodlightProviderService floodlightProvider;
     protected static Logger log;
-    public static final String MODULE_NAME = "hiddenpacketverifier";
+    //stores the hash of a packet payload with the time it was sent into the system
+    private ConcurrentHashMap<Integer, Long> sentPackets = new ConcurrentHashMap<Integer, Long>();
+
     protected List<Ethernet> storedPackets = new ArrayList<>();
+
+    String srcMAC = "aa:aa:aa:aa:aa:aa";
+
+
 //- - -
-
-// Nested Class
-    protected class PacketWorker implements Runnable {
-        IOFSwitch sw;
-        short portID;
-        int delay;
-
-        public PacketWorker(IOFSwitch s, short p, int d){
-            sw = s;
-            portID = p;
-            delay = d;
-        }
-
-        @Override
-        public void run() {
-            if (sw == null) return; //switch is offline, do nothing
-
-            OFPacketOut po = generate_packet(sw, portID);
-
-            log.info("Send out delay probe message, isEmpty {}", ((LearningSwitch)sw).getTable().size());
-            try {
-                if (delay > 0) {
-                    Thread.sleep(delay);
-                }
-                sw.write(po, null);
-                sw.flush();
-            } catch (Exception e) {
-                log.error("Cannot write probing message to SW " + sw.getStringId());
-            }
-        }
-    }
-
 
     @Override
     public Command receive(IOFSwitch sw, OFMessage msg, FloodlightContext cntx) {
         switch(msg.getType()) {
             case PACKET_IN:
                 Ethernet eth = IFloodlightProviderService.bcStore.get(cntx, IFloodlightProviderService.CONTEXT_PI_PAYLOAD);
-
                 //only care about data plane messages
                 if (eth.getEtherType() == Ethernet.TYPE_IPv4) {
-                    storedPackets.add(eth); //maybe do this in a different data structure for efficiency
-                    log.info("{} stored packets", storedPackets.size());
-                    log.info("\n\nTEST LEARNINGSWITCH isEmpty {}\n\n", ((LearningSwitch)sw).getTable().size());
-                    return Command.CONTINUE;
-                    //(new Thread(new PacketWorker(sw, ((OFPacketIn) msg).getInPort(), 500))).start();
+
+                    //is this the hidden packet
+                    if(srcMAC.equals(eth.getSourceMAC())) {
+
+                        if(sentPackets.containsKey(eth.getPayload().hashCode())) {
+                            Long timeSent = sentPackets.get(eth.getPayload().hashCode());
+                            log.warn("Received HPV sent @ {}, received @ {}", timeSent, System.nanoTime());
+                        } else {
+                            return Command.STOP;
+                        }
+
+                    } else {
+                        storedPackets.add(eth); //maybe do this in a different data structure for efficiency
+                        log.info("Adding new to {} stored pkt", storedPackets.size());
+                        (new Thread(new PacketWorker(sw))).start();
+                    }
+
+
                 }
                 break;
             default:
@@ -87,27 +78,59 @@ public class HiddenPacket implements IOFMessageListener, IFloodlightModule<IFloo
         return Command.CONTINUE;
     }
 
+    public OFPacketOut generate_packet_out(Ethernet eth){
 
-    public boolean remove_switch_pkt_rule(){
-        //get the end point and remove its flow rules for the packet
-        return true;
-
-    }
-
-    public OFPacketOut generate_packet(IOFSwitch sw, short port){
-
-        Ethernet eth = storedPackets.remove(0);
         OFPacketOut po = (OFPacketOut) floodlightProvider.getOFMessageFactory().getMessage((OFType.PACKET_OUT));
+        byte[] originalSrc = eth.getSourceMACAddress();
         byte[] data = eth.serialize();
-
         po.setBufferId(OFPacketOut.BUFFER_ID_NONE);
         po.setInPort(OFPort.OFPP_NONE);
-        // set data and data length
         po.setLengthU(OFPacketOut.MINIMUM_LENGTH + data.length);
         po.setPacketData(data);
         return po;
-
     }
+
+
+
+    // Nested Class
+    protected class PacketWorker implements Runnable {
+        IOFSwitch sw;
+
+        public PacketWorker(IOFSwitch switchID) {sw = switchID;}
+
+        @Override
+        public void run() {
+            if (sw == null) return; //switch is offline, do nothing
+            if(storedPackets.isEmpty()) return;
+            Ethernet eth = storedPackets.remove(0);
+            eth.setSourceMACAddress(srcMAC);
+            OFPacketOut po = generate_packet_out(eth);
+
+            if(po == null) {
+                log.warn("No stored packet in HPV");
+                return;
+            }
+
+            try {
+                sw.write(po, null);
+                sw.flush();
+                log.info("HPV SENT INTO SYSTEM");
+                sentPackets.put((eth.getPayload()).hashCode(), System.nanoTime());
+                //start a time out for another packet in
+                Thread.sleep(500); //wait
+
+                if(sentPackets.containsKey(eth.getPayload().hashCode())){
+                    log.warn("HPV NOT RETURNED IN 500MS");
+                } else {
+                    log.warn("HPV RETURNED IN <500MS");
+                }
+
+            } catch (Exception e) {
+                log.error("Cannot write probing message to SW " + sw.getStringId());
+            }
+        }
+    }
+
 
 
         //***************
