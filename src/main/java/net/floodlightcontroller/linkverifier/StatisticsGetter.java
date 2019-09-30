@@ -72,7 +72,7 @@ public class StatisticsGetter extends Thread {
 			BufferedReader srcStatRequest = makeWebRequest("/wm/core/switch/" + l.src_switch + "/port/json");
 			log.warn("\n\nTime 1 @ {}\n", System.currentTimeMillis());
 			BufferedReader dstStatRequest = makeWebRequest("/wm/core/switch/" + l.dst_switch + "/port/json");
-			log.warn("\n\nTime 2 @ {}\n", System.currentTimeMillis());	
+			log.warn("\n\nTime 2 @ {}\n", System.currentTimeMillis());
 
 			log.warn("\n\nParsing Stats\n");
 			@SuppressWarnings("unchecked")
@@ -144,33 +144,33 @@ public class StatisticsGetter extends Thread {
 				});
 		}
 	}
-	
 
-	
+
+
     //***************
     // NESTED CLASSES
     //***************
 	public class StatLink {
 		@SerializedName("src-switch")
 		public String src_switch;
-		
+
 		@SerializedName("src-port")
 		public int src_port;
-		
+
 		@SerializedName("dst-switch")
 		public String dst_switch;
-		
+
 		@SerializedName("dst-port")
 		public int dst_port;
-		
+
 		public String type;
 		public String direction;
 		public int latency;
-		
+
 		public StatLink() {
 			// add stuff later
 		}
-		
+
 		public String toString() {
 			StringBuilder sb = new StringBuilder();
 			sb.append("--------- link description ---------\n");
@@ -189,9 +189,9 @@ public class StatisticsGetter extends Thread {
 			sb.append("\nlatency: ");
 			sb.append(latency);
 			sb.append("\n----- link description  end -----");
-			
+
 			return sb.toString();
-			
+
 		}
 	}
 
@@ -210,14 +210,14 @@ public class StatisticsGetter extends Thread {
 		public long receiveOverrunErrors;
 		public long receiveCRCErrors;
 		public long collisions;
-		
+
 		public PortStat() {
 			// might need me later
 		}
-		
+
 		public String toString() {
 			StringBuilder sb = new StringBuilder();
-			
+
 			sb.append("---------- port statistics --------");
 			sb.append("\nport_number: ");
 			sb.append(portNumber);
@@ -246,7 +246,7 @@ public class StatisticsGetter extends Thread {
 			sb.append("\ncollisions: ");
 			sb.append(collisions);
 			sb.append("\n---------- end --------");
-			
+
 			return sb.toString();
 		}
 	}

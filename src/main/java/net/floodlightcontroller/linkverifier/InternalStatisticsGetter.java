@@ -48,7 +48,7 @@ public class InternalStatisticsGetter extends Thread {
 
        	this.sw1 = sw1;
         this.sw1Port = msg.getInPort();
-	// TO DO get chassis id from .getChassisID without buffer under/overflows
+	    // TO DO get chassis id from .getChassisID without buffer under/overflows
         for (LLDPTLV lldptlv : lldp.getOptionalTLVList()) {
             if (lldptlv.getType() == 127 && lldptlv.getLength() == 12
                 && lldptlv.getValue()[0] == 0x0
@@ -76,7 +76,7 @@ public class InternalStatisticsGetter extends Thread {
 				});
 
         OFPortStatisticsReply sw1Stats = (OFPortStatisticsReply)getPortStatistics(sw1, sw1Port).get(0);
-	OFPortStatisticsReply sw2Stats = (OFPortStatisticsReply)getPortStatistics(sw2, sw2Port).get(0);
+	    OFPortStatisticsReply sw2Stats = (OFPortStatisticsReply)getPortStatistics(sw2, sw2Port).get(0);
 
 	log.warn("\n({}, {}): received {}B, transmitted {}B.\n",
 			new Object[] {sw1.getStringId(),
