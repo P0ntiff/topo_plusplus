@@ -180,10 +180,6 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 		}
 	}
 
-
-
-
-
 	//***************
     // IFloodlightModule
     //***************
