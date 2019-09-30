@@ -12,6 +12,7 @@ import java.util.*;
 import com.google.gson.Gson;
 import com.google.gson.annotations.SerializedName;
 import com.google.gson.reflect.TypeToken;
+import jdk.nashorn.internal.objects.annotations.Getter;
 import net.floodlightcontroller.core.*;
 import net.floodlightcontroller.topology.NodePortTuple;
 import org.openflow.protocol.*;
@@ -40,6 +41,11 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 	private Map<NodePortTuple, StatLink> switchMap =new HashMap<>();//Key = SwitchID, Value=Map<Port, Link>
 	private Map<NodePortTuple,Integer> deviceMap = new HashMap<>();//Key = SwitchID,Port Tuple, Value=HostIP
 	private Map<Integer, List<String>> packetMap = new HashMap<>();//Key = PacketId, Value = {time, srcSw, dstSw}
+
+	enum GetterType {
+		DEVICES,
+		ROUTES,
+	}
 
 //- - -
 
@@ -73,12 +79,16 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 		return Command.CONTINUE;
 	}
 
+	//***************
+	// NESTED CLASSES
+	//***************
+
 	public class WebGetter extends Thread {
 		private final String ipAddress = "localhost";
 		private final String port = "8080";
-		private String type;
+		private GetterType type;
 
-		public WebGetter(String type) {
+		public WebGetter(GetterType type) {
 			this.type = type;
 		}
 
@@ -91,11 +101,11 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 
 		public void run(){
 			switch(type){
-				case "updateInfo":
+				case DEVICES:
 					log.info("Updating LinkVerifier map information...");
 					get_devices();
 					break;
-				case "getRoute":
+				case ROUTES:
 					log.info("Getting route information...");
 					break;
 				default:
@@ -139,7 +149,8 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 	}
 
 
-	//Nested
+
+
 	public class DeviceInfo {
 		@SerializedName("entityClass")
 		public String entityClass;

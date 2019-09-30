@@ -7,11 +7,11 @@ import net.floodlightcontroller.core.IFloodlightProviderService;
 import net.floodlightcontroller.core.IOFSwitch;
 import net.floodlightcontroller.packet.*;
 import net.floodlightcontroller.topology.NodePortTuple;
-import org.openflow.protocol.OFPacketOut;
-import org.openflow.protocol.OFPort;
-import org.openflow.protocol.OFType;
+import org.openflow.protocol.*;
 import org.openflow.protocol.action.OFAction;
 import org.openflow.protocol.action.OFActionOutput;
+import org.openflow.protocol.action.OFActionType;
+import org.openflow.util.U16;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -28,32 +28,63 @@ public class HiddenPacket extends Thread {
     private Map<Integer, List<String>> packetMap;
     private NodePortTuple startPoint;
     private NodePortTuple endPoint;
-    private int endIPAddr;
 
 
     public HiddenPacket(IFloodlightProviderService provider,
                         Map<NodePortTuple,Integer> deviceMap,
-                        Map<Integer, List<String>> packetMap) {
+                        Map<Integer, List<String>> packetMap,
+                        NodePortTuple startPoint, NodePortTuple endPoint) {
         log = LoggerFactory.getLogger(HiddenPacket.class);
         this.provider = provider;
         this.deviceMap = deviceMap;
         this.packetMap = packetMap;
         this.startPoint = startPoint;
         this.endPoint = endPoint;
-        this.endIPAddr = endIPAddr;
-
     }
 
     public void run() {
 
-        //send the packet into the system
-        IOFSwitch sw = provider.getSwitch(startPoint.getNodeId());
-        if (sw == null) return; //switch is offline, do nothing
+        IOFSwitch srcSw = provider.getSwitch(startPoint.getNodeId());
+        IOFSwitch dstSw = provider.getSwitch(endPoint.getNodeId());
 
-        //just PING for the moment, but should be changed
+        if (srcSw == null || dstSw == null) {
+            log.warn("Switch on path is offline");
+            return; //switch is offline, do nothing
+        }
+
+        Ethernet eth = generate_payload();
+        OFPacketOut po = generate_packet_out(eth);
+        OFMessage flowMod = generate_flow_rule((IPv4)eth.getPayload());
+
+        try {
+            //INSTALL FLOW RULE IN END POINT
+            dstSw.write(flowMod, null);
+            dstSw.flush();
+
+            //SEND HIDDEN PACKET INTO SYSTEM
+
+            srcSw.write(po, null);
+            srcSw.flush();
+            log.info("HP SENT INTO SYSTEM {}", (eth.getPayload()).hashCode());
+            Thread.sleep(500);
+
+            if(packetMap.containsKey(eth.getPayload().hashCode())){
+                log.warn("HP WAS NOT RETURNED IN 500ms");
+            } else {
+                log.warn("HP WAS RETURNED IN 500ms");
+            }
+
+        } catch (Exception e) {
+            log.error("Cannot write probing message to SW " + srcSw.getStringId());
+        }
+        return;
+    }
+
+    public Ethernet generate_payload(){
+        //just PING for the moment, but should randomly select payload type
         IPacket packet = new IPv4()
                 .setProtocol(IPv4.PROTOCOL_ICMP)
-                .setSourceAddress("10.0.0.100")
+                .setSourceAddress(deviceMap.get(startPoint))
                 .setDestinationAddress(deviceMap.get(endPoint))
                 .setPayload(new ICMP()
                         .setIcmpType((byte) 8)
@@ -68,27 +99,8 @@ public class HiddenPacket extends Thread {
                 .setEtherType(Ethernet.TYPE_IPv4);
 
         eth.setPayload(packet);
-        OFPacketOut po = generate_packet_out(eth);
-
-        try {
-            sw.write(po, null);
-            sw.flush();
-            log.info("HPV SENT INTO SYSTEM {}", (eth.getPayload()).hashCode());
-            Thread.sleep(500);
-
-            if(packetMap.containsKey(eth.getPayload().hashCode())){
-                log.warn("HPV WAS NOT RETURNED IN 500ms");
-            } else {
-                log.warn("HPV WAS RETURNED IN 500ms");
-            }
-
-        } catch (Exception e) {
-            log.error("Cannot write probing message to SW " + sw.getStringId());
-        }
-        return;
+        return eth;
     }
-
-
 
     public OFPacketOut generate_packet_out(Ethernet eth){
 
@@ -111,6 +123,20 @@ public class HiddenPacket extends Thread {
         return po;
     }
 
+    public OFMessage generate_flow_rule(IPv4 packet){
+        //TODO this port should be changed when shortest route is figured out
+        OFMatch match = new OFMatch().loadFromPacket(packet.serialize(), OFPort.OFPP_ALL.getValue());
 
+        List<OFAction> actions = new ArrayList<>();
+        actions.add(new OFActionOutput(OFPort.OFPP_CONTROLLER.getValue()));
+
+        OFMessage flowMod = ((OFFlowMod) provider.getOFMessageFactory().getMessage(OFType.FLOW_MOD))
+                .setMatch(match).setCommand(OFFlowMod.OFPFC_ADD)
+                .setOutPort(OFPort.OFPP_NONE)
+                .setActions(actions)
+                .setHardTimeout((short)5) //timeout rule after 5 seconds
+                .setPriority((short)1).setLength(U16.t(OFFlowMod.MINIMUM_LENGTH));
+        return flowMod;
+    }
 
 }
