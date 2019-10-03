@@ -511,7 +511,7 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 		routingEngine = cntx.getServiceImpl(IRoutingService.class);
 		linkEngine = cntx.getServiceImpl(ILinkDiscoveryService.class);
 		log = LoggerFactory.getLogger(LinkVerifier.class);
-		statManager = new StatisticsManager();
+		statManager = new StatisticsManager(linkEngine, floodlightProvider);
 		rand = new Random();
 	}
 
