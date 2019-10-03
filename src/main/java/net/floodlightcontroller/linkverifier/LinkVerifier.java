@@ -56,7 +56,6 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 		if(msg.getType().equals(OFType.PACKET_IN)) {
 			Ethernet eth = IFloodlightProviderService.bcStore.get(cntx, IFloodlightProviderService.CONTEXT_PI_PAYLOAD);
 
-
 			if(eth.getPayload() instanceof BSN) { /* IF LLDP, VERIFY STATISTICS OF LINKS */
 				BSN bsn = (BSN) eth.getPayload();
 				if(bsn == null || bsn.getPayload() == null) return Command.STOP;
@@ -67,6 +66,9 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 				(new InternalStatisticsGetter((LLDP) eth.getPayload(), sw, (OFPacketIn) msg, cntx, floodlightProvider)).start();
 				return Command.STOP;
 			} else if(eth.getPayload() instanceof IPv4) { /* IF IPV4, CHECK IF HIDDEN PACKET */
+				log.info("WEB GETTING DEVICES");
+				(new WebGetter(GetterType.DEVICES, deviceMap)).start();
+
 				IPv4 packet = (IPv4) eth.getPayload();
 
 				if(packetMap.containsKey(packet.hashCode())) {
@@ -77,6 +79,7 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 				}
 			}
 		}
+
 		return Command.CONTINUE;
 	}
 
@@ -106,31 +109,31 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 	/** HiddenPacket thread to send HP to desired switches
 	 *
 	 **/
-	public class HiddenPacket extends Thread {
+	public class HiddenPacketWorker extends Thread {
 		protected IFloodlightProviderService provider;
 
 		//host map, K = Switch/Port Pair, V = Host_IP
 		private Map<Integer, NodePortTuple> deviceMap;
 		private Map<Integer, List<String>> packetMap;
-		private int h1;
-		private int h2;
+		private String h1_IP;
+		private String h2_IP;
 
 
-		public HiddenPacket(IFloodlightProviderService provider,
+		public HiddenPacketWorker(IFloodlightProviderService provider,
 							Map<Integer, NodePortTuple> deviceMap,
 							Map<Integer, List<String>> packetMap,
-							int[] hostIPs) {
+							int h1, int h2) {
 			this.provider = provider;
 			this.deviceMap = deviceMap;
 			this.packetMap = packetMap;
-			this.h1 = hostIPs[0];
-			this.h1 = hostIPs[1];
+			this.h1_IP = h1_IP;
+			this.h2_IP = h2_IP;
 		}
 
 		public void run() {
-/*
-        IOFSwitch srcSw = provider.getSwitch((deviceMap.get(h1)).getNodeId());
-        IOFSwitch dstSw = provider.getSwitch((deviceMap.get(h2)).getNodeId());
+
+        IOFSwitch srcSw = provider.getSwitch((deviceMap.get(h1_IP)).getNodeId());
+        IOFSwitch dstSw = provider.getSwitch((deviceMap.get(h2_IP)).getNodeId());
 
 
         if (srcSw == null || dstSw == null) {
@@ -163,19 +166,18 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
         } catch (Exception e) {
             log.error("Cannot write probing message to SW " + srcSw.getStringId());
         }
-*/
 
 			return;
 		}
 
-/*
+
     public Ethernet generate_payload(){
         //just PING for the moment, but should randomly select payload type
 
         IPacket packet = new IPv4()
                 .setProtocol(IPv4.PROTOCOL_ICMP)
-                .setSourceAddress(deviceMap.get(startPoint))
-                .setDestinationAddress(deviceMap.get(endPoint))
+                .setSourceAddress(h1_IP)
+                .setDestinationAddress(h2_IP)
                 .setPayload(new ICMP()
                         .setIcmpType((byte) 8)
                         .setIcmpCode((byte) 0)
@@ -190,7 +192,7 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 
         eth.setPayload(packet);
         return eth;
-    }*/
+    }
 
 		public OFPacketOut generate_packet_out(Ethernet eth){
 
@@ -277,7 +279,10 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 		}
 
 		public void parse_devices(List<DeviceInfo> devices) {
+			log.info("Parsing deivces...");
 			for(DeviceInfo d : devices) {
+				if(d.ipv4.length == 0) continue;
+
 				List<NodePortTuple> values =  new ArrayList<>();
 
 				for(Map<String, String> info : d.attachmentPoint) {
@@ -289,6 +294,8 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 				deviceMap.put(d.ipv4[0], values);
 
 			}
+
+			log.info("Device map of size {}", deviceMap.size());
 
 		}
 
