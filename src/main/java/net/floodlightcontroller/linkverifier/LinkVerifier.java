@@ -6,13 +6,10 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.URL;
 import java.net.URLConnection;
-import java.nio.ByteBuffer;
 import java.util.*;
 
 import com.google.gson.Gson;
-import com.google.gson.annotations.SerializedName;
 import com.google.gson.reflect.TypeToken;
-import jdk.nashorn.internal.objects.annotations.Getter;
 import net.floodlightcontroller.core.*;
 import net.floodlightcontroller.linkdiscovery.ILinkDiscoveryService;
 import net.floodlightcontroller.linkdiscovery.LinkInfo;
@@ -26,7 +23,6 @@ import net.floodlightcontroller.topology.TopologyManager;
 import org.openflow.protocol.*;
 import org.openflow.protocol.action.OFAction;
 import org.openflow.protocol.action.OFActionOutput;
-import org.openflow.util.HexString;
 import org.openflow.util.U16;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -55,8 +51,10 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 	private Map<NodePortTuple, Link> linkMap =new HashMap<>();//Key = NodePortTuple, Value=Link
 	private Map<String, List<NodePortTuple>> deviceMap = new HashMap<>();//Key =HostIP , Value= AttachmentPoints
 	private Map<Integer, List<String>> packetMap = new HashMap<>();//Key = PacketId, Value = {time, srcSw, dstSw}
+	
+	private StatisticsManager statManager;
 
-	enum GetterType {
+	private enum GetterType {
 		DEVICES,
 		ROUTES,
 		LINKS,
@@ -256,6 +254,10 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 			this.linkMap = linkMap;
 			this.startPoint = startPoint;
 			this.endPoint = endPoint;
+		}
+		
+		public WebGetter() {
+			//constructor used for utility methods
 		}
 
 		public BufferedReader makeWebRequest(String path) throws IOException {
@@ -507,13 +509,14 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 		routingEngine = cntx.getServiceImpl(IRoutingService.class);
 		linkEngine = cntx.getServiceImpl(ILinkDiscoveryService.class);
 		log = LoggerFactory.getLogger(LinkVerifier.class);
+		statManager = new StatisticsManager();
 	}
 
 	@Override
 	public void startUp(FloodlightModuleContext arg0) throws FloodlightModuleException {
 		// OpenFlow messages we want to receive
         floodlightProvider.addOFMessageListener(OFType.PACKET_IN, this);
-		
+		statManager.start();
 	}
 
 	@Override
@@ -522,6 +525,7 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 		        new ArrayList<Class<? extends IFloodlightService>>();
 		    l.add(IFloodlightProviderService.class);
 		    return l;
+		    
 	}
 
 	@Override
