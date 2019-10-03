@@ -1,26 +1,15 @@
 package net.floodlightcontroller.linkverifier;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.net.URL;
-import java.net.URLConnection;
 import java.util.*;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.nio.ByteBuffer;
 import net.floodlightcontroller.core.IFloodlightProviderService;
-import net.floodlightcontroller.routing.Link;
 import org.openflow.protocol.OFPacketIn;
 import org.openflow.protocol.OFStatisticsRequest;
 import org.openflow.protocol.statistics.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import com.google.gson.Gson;
-import com.google.gson.annotations.SerializedName;
-import com.google.gson.reflect.TypeToken;
 
 import net.floodlightcontroller.core.FloodlightContext;
 import net.floodlightcontroller.core.IOFSwitch;
