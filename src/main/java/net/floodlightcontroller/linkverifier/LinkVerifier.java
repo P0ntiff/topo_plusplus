@@ -57,6 +57,8 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
     protected static Logger log;
     public static final String MODULE_NAME = "linkverifier";
     protected TopologyInstance currentInstance;
+    
+    private Random rand;
 
 
 	private Map<NodePortTuple, Link> linkMap =new HashMap<>();//Key = NodePortTuple, Value=Link
@@ -109,9 +111,8 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 	 * @return int host IP address
 	 */
 	public int get_random_host_addr(){
-		Random generator = new Random();
 		Object[] ips = deviceMap.keySet().toArray();
-		int IP1 = (int)ips[generator.nextInt(ips.length)];
+		int IP1 = (int)ips[rand.nextInt(ips.length)];
 		return IP1;
 	}
 
@@ -535,7 +536,8 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 		deviceEngine = cntx.getServiceImpl(IDeviceService.class);
 
 		log = LoggerFactory.getLogger(LinkVerifier.class);
-		statManager = new StatisticsManager();
+		statManager = new StatisticsManager(linkEngine, floodlightProvider);
+		rand = new Random();
 	}
 
 	@Override
