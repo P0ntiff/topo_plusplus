@@ -29,5 +29,4 @@ net.floodlightcontroller.devicemanager.internal.DefaultEntityClassifier
 net.floodlightcontroller.topologysecurity.ControlLinkProber
 net.floodlightcontroller.topologysecurity.TopoloyUpdateChecker
 net.floodlightcontroller.linkverifier.LinkVerifier
-net.floodlightcontroller.linkverifier.HiddenPacket
 

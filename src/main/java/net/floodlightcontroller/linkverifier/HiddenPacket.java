@@ -43,9 +43,9 @@ public class HiddenPacket extends Thread {
     }
 
     public void run() {
-
+/*
         IOFSwitch srcSw = provider.getSwitch((deviceMap.get(h1)).getNodeId());
-        IOFSwitch dstSw = provider.getSwitch((deviceMap.g et(h2)).getNodeId());
+        IOFSwitch dstSw = provider.getSwitch((deviceMap.get(h2)).getNodeId());
 
 
         if (srcSw == null || dstSw == null) {
@@ -78,11 +78,15 @@ public class HiddenPacket extends Thread {
         } catch (Exception e) {
             log.error("Cannot write probing message to SW " + srcSw.getStringId());
         }
+*/
+
         return;
     }
 
+/*
     public Ethernet generate_payload(){
         //just PING for the moment, but should randomly select payload type
+
         IPacket packet = new IPv4()
                 .setProtocol(IPv4.PROTOCOL_ICMP)
                 .setSourceAddress(deviceMap.get(startPoint))
@@ -101,7 +105,7 @@ public class HiddenPacket extends Thread {
 
         eth.setPayload(packet);
         return eth;
-    }
+    }*/
 
     public OFPacketOut generate_packet_out(Ethernet eth){
 

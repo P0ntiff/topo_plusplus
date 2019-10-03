@@ -39,7 +39,7 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
     public static final String MODULE_NAME = "linkverifier";
 
 	private Map<NodePortTuple, StatLink> switchMap =new HashMap<>();//Key = NodePortTuple, Value=Link
-	private Map<Integer, NodePortTuple> deviceMap = new HashMap<>();//Key =HostIP , Value=NodePortTuple
+	private Map<String, List<NodePortTuple>> deviceMap = new HashMap<>();//Key =HostIP , Value= AttachmentPoints
 	private Map<Integer, List<String>> packetMap = new HashMap<>();//Key = PacketId, Value = {time, srcSw, dstSw}
 
 	enum GetterType {
@@ -89,21 +89,14 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 
 
 	/**
-	 * Randomly selects two host IP addresses from the DeviceMap
-	 * @return int[] containing two IP addresses
+	 * Randomly selects a host IP addresses from the DeviceMap
+	 * @return int host IP address
 	 */
-	public int[] get_random_hosts(){
+	public int get_random_host_addr(){
 		Random generator = new Random();
 		Object[] ips = deviceMap.keySet().toArray();
-		Object IP1 = ips[generator.nextInt(ips.length)];
-		Object IP2 = ips[generator.nextInt(ips.length)];
-		/*
-		while(IP1.equals(IP2)){
-			IP2 = ips[generator.nextInt(ips.length)];
-		}
-		*/
-		int[] result = {(int) IP1, (int) IP2};
-		return result;
+		int IP1 = (int)ips[generator.nextInt(ips.length)];
+		return IP1;
 	}
 
 
@@ -116,9 +109,11 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 		private final String ipAddress = "localhost";
 		private final String port = "8080";
 		private GetterType type;
+		private Map<String, List<NodePortTuple>> deviceMap; //Key = IP, Value = List of PoA's
 
-		public WebGetter(GetterType type) {
+		public WebGetter(GetterType type, Map<String, List<NodePortTuple>> deviceMap) {
 			this.type = type;
+			this.deviceMap = deviceMap;
 		}
 
 		public BufferedReader makeWebRequest(String path) throws IOException {
@@ -156,10 +151,20 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 
 		public void parse_devices(List<DeviceInfo> devices) {
 			for(DeviceInfo d : devices) {
-            // TODO
+				List<NodePortTuple> values =  new ArrayList<>();
+
+				for(Map<String, String> info : d.attachmentPoint) {
+					NodePortTuple val = new NodePortTuple(Long.parseLong(info.get("switchDPID")),
+							Short.parseShort(info.get("port")));
+					values.add(val);
+				}
+
+				deviceMap.put(d.ipv4[0], values);
+
 			}
+
 		}
-		//TODO
+
 		public void get_route(String src_dpid, int src_port, String dst_dpid, int dst_port){
 			try {
 				Gson gson = new Gson();
@@ -181,27 +186,14 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 
 
 	public class DeviceInfo {
-		@SerializedName("entityClass")
+
 		public String entityClass;
-
-		@SerializedName("mac")
 		public String[] mac;
-
-		@SerializedName("ipv4")
 		public String[] ipv4;
-
-		@SerializedName("vlan")
 		public String[] vlan;
-
-		@SerializedName("attachmentPoint")
-		public String[] attachmentPoint;
-
-		@SerializedName("lastSeen")
-		public int lastSeen;
-
-		@SerializedName("dhcpClientName")
+		public Map<String, String>[] attachmentPoint;
+		public long lastSeen;
 		public String dhcpClientName;
-
 
 
 		public DeviceInfo() {
