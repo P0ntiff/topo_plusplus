@@ -24,28 +24,29 @@ public class HiddenPacket extends Thread {
     protected static Logger log;
 
     //host map, K = Switch/Port Pair, V = Host_IP
-    private Map<NodePortTuple,Integer> deviceMap;
+    private Map<Integer, NodePortTuple> deviceMap;
     private Map<Integer, List<String>> packetMap;
-    private NodePortTuple startPoint;
-    private NodePortTuple endPoint;
+    private int h1;
+    private int h2;
 
 
     public HiddenPacket(IFloodlightProviderService provider,
-                        Map<NodePortTuple,Integer> deviceMap,
+                        Map<Integer, NodePortTuple> deviceMap,
                         Map<Integer, List<String>> packetMap,
-                        NodePortTuple startPoint, NodePortTuple endPoint) {
+                        int[] hostIPs) {
         log = LoggerFactory.getLogger(HiddenPacket.class);
         this.provider = provider;
         this.deviceMap = deviceMap;
         this.packetMap = packetMap;
-        this.startPoint = startPoint;
-        this.endPoint = endPoint;
+        this.h1 = hostIPs[0];
+        this.h1 = hostIPs[1];
     }
 
     public void run() {
 
-        IOFSwitch srcSw = provider.getSwitch(startPoint.getNodeId());
-        IOFSwitch dstSw = provider.getSwitch(endPoint.getNodeId());
+        IOFSwitch srcSw = provider.getSwitch((deviceMap.get(h1)).getNodeId());
+        IOFSwitch dstSw = provider.getSwitch((deviceMap.g et(h2)).getNodeId());
+
 
         if (srcSw == null || dstSw == null) {
             log.warn("Switch on path is offline");

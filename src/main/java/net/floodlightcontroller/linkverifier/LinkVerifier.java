@@ -38,8 +38,8 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
     protected static Logger log;
     public static final String MODULE_NAME = "linkverifier";
 
-	private Map<NodePortTuple, StatLink> switchMap =new HashMap<>();//Key = SwitchID, Value=Map<Port, Link>
-	private Map<NodePortTuple,Integer> deviceMap = new HashMap<>();//Key = SwitchID,Port Tuple, Value=HostIP
+	private Map<NodePortTuple, StatLink> switchMap =new HashMap<>();//Key = NodePortTuple, Value=Link
+	private Map<Integer, NodePortTuple> deviceMap = new HashMap<>();//Key =HostIP , Value=NodePortTuple
 	private Map<Integer, List<String>> packetMap = new HashMap<>();//Key = PacketId, Value = {time, srcSw, dstSw}
 
 	enum GetterType {
@@ -55,15 +55,17 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 		if(msg.getType().equals(OFType.PACKET_IN)) {
 			Ethernet eth = IFloodlightProviderService.bcStore.get(cntx, IFloodlightProviderService.CONTEXT_PI_PAYLOAD);
 
-			/* IF LLDP, VERIFY STATISTICS OF LINKS */
-			if(eth.getPayload() instanceof BSN) {
+
+			if(eth.getPayload() instanceof BSN) { /* IF LLDP, VERIFY STATISTICS OF LINKS */
 				BSN bsn = (BSN) eth.getPayload();
 				if(bsn == null || bsn.getPayload() == null) return Command.STOP;
 				if(bsn.getPayload() instanceof LLDP == false) return Command.CONTINUE;
 				(new InternalStatisticsGetter((LLDP) bsn.getPayload(), sw, (OFPacketIn) msg, cntx, floodlightProvider)).start();
+
 			} else if(eth.getPayload() instanceof LLDP) {
 				(new InternalStatisticsGetter((LLDP) eth.getPayload(), sw, (OFPacketIn) msg, cntx, floodlightProvider)).start();
-			} else if(eth.getPayload() instanceof IPv4) {
+
+			} else if(eth.getPayload() instanceof IPv4) { /* IF IPV4, CHECK IF HIDDEN PACKET */
 				IPv4 packet = (IPv4) eth.getPayload();
 
 				if(packetMap.containsKey(packet.hashCode())) {
@@ -73,11 +75,38 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 				} else {
 					return Command.CONTINUE; //not a HP, so process normally
 				}
+
 			}
 			return Command.STOP;
 		}
 		return Command.CONTINUE;
 	}
+
+
+	//***************
+	// HIDDEN PACKET METHODS
+	//***************
+
+
+	/**
+	 * Randomly selects two host IP addresses from the DeviceMap
+	 * @return int[] containing two IP addresses
+	 */
+	public int[] get_random_hosts(){
+		Random generator = new Random();
+		Object[] ips = deviceMap.keySet().toArray();
+		Object IP1 = ips[generator.nextInt(ips.length)];
+		Object IP2 = ips[generator.nextInt(ips.length)];
+		/*
+		while(IP1.equals(IP2)){
+			IP2 = ips[generator.nextInt(ips.length)];
+		}
+		*/
+		int[] result = {(int) IP1, (int) IP2};
+		return result;
+	}
+
+
 
 	//***************
 	// NESTED CLASSES
@@ -190,6 +219,12 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 
 		}
 	}
+
+
+
+
+
+
 
 	//***************
     // IFloodlightModule
