@@ -3,69 +3,47 @@ package net.floodlightcontroller.linkverifier;
 import java.util.*;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.nio.ByteBuffer;
 import net.floodlightcontroller.core.IFloodlightProviderService;
-import org.openflow.protocol.OFPacketIn;
 import org.openflow.protocol.OFStatisticsRequest;
 import org.openflow.protocol.statistics.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import net.floodlightcontroller.core.FloodlightContext;
 import net.floodlightcontroller.core.IOFSwitch;
-import net.floodlightcontroller.packet.*;
+import net.floodlightcontroller.routing.Link;
 
 public class InternalStatisticsGetter extends Thread {
 
-    private LLDP lldp;
-    private OFPacketIn msg;
-    private FloodlightContext cntx;
     protected IFloodlightProviderService provider;
 
+    private Link link;
     private IOFSwitch sw1;
-    private short sw1Port;
     private IOFSwitch sw2;
-    private short sw2Port;
 
     protected static Logger log;
-
-    public InternalStatisticsGetter(LLDP lldp, IOFSwitch sw1, OFPacketIn msg, FloodlightContext cntx, IFloodlightProviderService floodlightProvider) {
-        this.lldp = lldp;
-        this.msg = msg;
-        this.cntx = cntx;
+     
+    public InternalStatisticsGetter(Link link, IFloodlightProviderService floodlightProvider) {
+    	log = LoggerFactory.getLogger(InternalStatisticsGetter.class);
+    	
         this.provider = floodlightProvider;
 
-       	this.sw1 = sw1;
-        this.sw1Port = msg.getInPort();
-	    // TO DO get chassis id from .getChassisID without buffer under/overflows
-        for (LLDPTLV lldptlv : lldp.getOptionalTLVList()) {
-            if (lldptlv.getType() == 127 && lldptlv.getLength() == 12
-                && lldptlv.getValue()[0] == 0x0
-                && lldptlv.getValue()[1] == 0x26
-                && lldptlv.getValue()[2] == (byte) 0xe1
-                && lldptlv.getValue()[3] == 0x0) {
-                ByteBuffer dpidBB = ByteBuffer.wrap(lldptlv.getValue());
-                this.sw2 = floodlightProvider.getSwitch(dpidBB.getLong(4));
-           }
-	}
+        this.link = link;
+       	this.sw1 = provider.getSwitch(link.getSrc());
+       	this.sw2 = provider.getSwitch(link.getDst());
 
-	ByteBuffer portBB = ByteBuffer.wrap(lldp.getPortId().getValue());
-	portBB.position(1);
-	this.sw2Port = portBB.getShort();
-        log = LoggerFactory.getLogger(InternalStatisticsGetter.class);
-    }
+	}
 
     public void run() {
 
 	log.warn("\n\n-- STATS for (switch,port) pairs ({}, {}) and ({}, {}) --\n",
 			new Object[] {sw1.getStringId(),
-				sw1Port,
+				link.getSrcPort(),
 				sw2.getStringId(),
-				sw2Port,
+				link.getDstPort(),
 				});
 
-        OFPortStatisticsReply sw1Stats = (OFPortStatisticsReply)getPortStatistics(sw1, sw1Port).get(0);
-	    OFPortStatisticsReply sw2Stats = (OFPortStatisticsReply)getPortStatistics(sw2, sw2Port).get(0);
+        OFPortStatisticsReply sw1Stats = (OFPortStatisticsReply)getPortStatistics(sw1, link.getSrcPort()).get(0);
+	    OFPortStatisticsReply sw2Stats = (OFPortStatisticsReply)getPortStatistics(sw2, link.getDstPort()).get(0);
 
 	log.warn("\n({}, {}): received {}B, transmitted {}B.\n",
 			new Object[] {sw1.getStringId(),
@@ -100,7 +78,7 @@ public class InternalStatisticsGetter extends Thread {
         req.setLengthU(requestLength);
         try {
             future = sw.queryStatistics(req);
-            values = future.get(10, TimeUnit.SECONDS);
+            values = future.get(1, TimeUnit.SECONDS);
         } catch (Exception e) {
             log.error("Failure retrieving statistics from switch " + sw, e);
         }
