@@ -990,7 +990,7 @@ public class LinkDiscoveryManager implements IOFMessageListener,
 
         // Consume this message, but pass it onto LinkVerifier
         ctrLldpEol.updateCounterNoFlush();
-        return Command.CONTINUE;
+        return Command.STOP;
     }
 
 

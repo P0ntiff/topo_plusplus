@@ -14,7 +14,15 @@ import com.google.gson.annotations.SerializedName;
 import com.google.gson.reflect.TypeToken;
 import jdk.nashorn.internal.objects.annotations.Getter;
 import net.floodlightcontroller.core.*;
+import net.floodlightcontroller.linkdiscovery.ILinkDiscoveryService;
+import net.floodlightcontroller.linkdiscovery.LinkInfo;
+import net.floodlightcontroller.linkdiscovery.web.LinksResource;
+import net.floodlightcontroller.routing.IRoutingService;
+import net.floodlightcontroller.routing.Link;
+import net.floodlightcontroller.routing.Route;
 import net.floodlightcontroller.topology.NodePortTuple;
+import net.floodlightcontroller.topology.TopologyInstance;
+import net.floodlightcontroller.topology.TopologyManager;
 import org.openflow.protocol.*;
 import org.openflow.protocol.action.OFAction;
 import org.openflow.protocol.action.OFActionOutput;
@@ -29,6 +37,7 @@ import net.floodlightcontroller.core.module.IFloodlightService;
 import net.floodlightcontroller.packet.*;
 
 
+
 /*
  * TOPOGUARD++ CLASS FOR VERIFICATION OF FLOW BETWEEN LINKS
  */
@@ -36,16 +45,21 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 
 // Instance Variables
 	protected IFloodlightProviderService floodlightProvider;
+	protected IRoutingService routingEngine;
+	protected ILinkDiscoveryService linkEngine;
     protected static Logger log;
     public static final String MODULE_NAME = "linkverifier";
+    protected TopologyInstance currentInstance;
 
-	private Map<NodePortTuple, StatLink> switchMap =new HashMap<>();//Key = NodePortTuple, Value=Link
+
+	private Map<NodePortTuple, Link> linkMap =new HashMap<>();//Key = NodePortTuple, Value=Link
 	private Map<String, List<NodePortTuple>> deviceMap = new HashMap<>();//Key =HostIP , Value= AttachmentPoints
 	private Map<Integer, List<String>> packetMap = new HashMap<>();//Key = PacketId, Value = {time, srcSw, dstSw}
 
 	enum GetterType {
 		DEVICES,
 		ROUTES,
+		LINKS,
 	}
 
 //- - -
@@ -56,18 +70,9 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 		if(msg.getType().equals(OFType.PACKET_IN)) {
 			Ethernet eth = IFloodlightProviderService.bcStore.get(cntx, IFloodlightProviderService.CONTEXT_PI_PAYLOAD);
 
-			if(eth.getPayload() instanceof BSN) { /* IF LLDP, VERIFY STATISTICS OF LINKS */
-				BSN bsn = (BSN) eth.getPayload();
-				if(bsn == null || bsn.getPayload() == null) return Command.STOP;
-				if(bsn.getPayload() instanceof LLDP == false) return Command.CONTINUE;
-				(new InternalStatisticsGetter((LLDP) bsn.getPayload(), sw, (OFPacketIn) msg, cntx, floodlightProvider)).start();
-				return Command.STOP;
-			} else if(eth.getPayload() instanceof LLDP) {
-				(new InternalStatisticsGetter((LLDP) eth.getPayload(), sw, (OFPacketIn) msg, cntx, floodlightProvider)).start();
-				return Command.STOP;
-			} else if(eth.getPayload() instanceof IPv4) { /* IF IPV4, CHECK IF HIDDEN PACKET */
+			if(eth.getPayload() instanceof IPv4) { /* IF IPV4, CHECK IF HIDDEN PACKET */
 				log.info("WEB GETTING DEVICES");
-				(new WebGetter(GetterType.DEVICES, deviceMap)).start();
+				//(new WebGetter(GetterType.DEVICES, deviceMap, linkMap, null, null)).start();
 
 				IPv4 packet = (IPv4) eth.getPayload();
 
@@ -77,6 +82,7 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 				} else {
 					return Command.CONTINUE; //not a HP, so process normally
 				}
+
 			}
 		}
 
@@ -239,10 +245,17 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 		private final String port = "8080";
 		private GetterType type;
 		private Map<String, List<NodePortTuple>> deviceMap; //Key = IP, Value = List of PoA's
+		private Map<Link, LinkInfo> linkMap; //Key = NodePortTuple, Value=Link
+		private NodePortTuple startPoint;
+		private NodePortTuple endPoint;
 
-		public WebGetter(GetterType type, Map<String, List<NodePortTuple>> deviceMap) {
+		public WebGetter(GetterType type, Map<String, List<NodePortTuple>> deviceMap,
+						 Map<Link, LinkInfo> linkMap, NodePortTuple startPoint, NodePortTuple endPoint) {
 			this.type = type;
 			this.deviceMap = deviceMap;
+			this.linkMap = linkMap;
+			this.startPoint = startPoint;
+			this.endPoint = endPoint;
 		}
 
 		public BufferedReader makeWebRequest(String path) throws IOException {
@@ -252,14 +265,20 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 			return new BufferedReader(new InputStreamReader(is));
 		}
 
-		public void run(){
-			switch(type){
+		public void run() {
+			switch (type) {
 				case DEVICES:
-					log.info("Updating LinkVerifier map information...");
+					log.info("Getting device information...");
 					get_devices();
 					break;
 				case ROUTES:
 					log.info("Getting route information...");
+					get_route(startPoint, endPoint);
+					break;
+				case LINKS:
+					log.info("Getting link information...");
+					linkMap = linkEngine.getLinks();
+
 					break;
 				default:
 					break;
@@ -267,11 +286,12 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 			return;
 		}
 
-		public void get_devices(){
+		public void get_devices() {
 			try {
 				Gson gson = new Gson();
 				BufferedReader linkReq = makeWebRequest("/wm/device/");
-				List<DeviceInfo> devices = gson.fromJson(linkReq, new TypeToken<LinkedList<DeviceInfo>>() {}.getType());
+				List<DeviceInfo> devices = gson.fromJson(linkReq, new TypeToken<LinkedList<DeviceInfo>>() {
+				}.getType());
 				parse_devices(devices);
 			} catch (Exception e) {
 				log.warn("\n\nError in get_devices WebRequest {}\n\n", e);
@@ -280,14 +300,15 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 
 		public void parse_devices(List<DeviceInfo> devices) {
 			log.info("Parsing deivces...");
-			for(DeviceInfo d : devices) {
-				if(d.ipv4.length == 0) continue;
+			for (DeviceInfo d : devices) {
+				if (d.ipv4.length == 0) continue;
 
-				List<NodePortTuple> values =  new ArrayList<>();
+				List<NodePortTuple> values = new ArrayList<>();
 
-				for(Map<String, String> info : d.attachmentPoint) {
-					NodePortTuple val = new NodePortTuple(Long.parseLong(info.get("switchDPID")),
-							Short.parseShort(info.get("port")));
+				for (Map<String, String> info : d.attachmentPoint) {
+					long dpid = Long.parseLong(info.get("switchDPID").replace(":", ""));
+					NodePortTuple val = new NodePortTuple(dpid, Short.parseShort(info.get("port")));
+
 					values.add(val);
 				}
 
@@ -299,52 +320,175 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 
 		}
 
-		public void get_route(String src_dpid, int src_port, String dst_dpid, int dst_port){
+		public void get_links() {
 			try {
 				Gson gson = new Gson();
-				BufferedReader linkReq = makeWebRequest("/route" +
-						"/" + src_dpid +
-						"/" + src_port +
-						"/" + dst_dpid +
-						"/" + dst_port + "/json");
-
-				//Route routes = gson.fromJson(linkReq, new TypeToken<LinkedList<Route>>() {}.getType());
-				//parse_route(routes);
+				BufferedReader linkReq = makeWebRequest("/wm/topology/links/json");
+				List<StatLink> links = gson.fromJson(linkReq, new TypeToken<LinkedList<StatLink>>() {
+				}.getType());
+				parse_links(links);
 			} catch (Exception e) {
 				log.warn("\n\nError in Link Verification WebRequest {}\n\n", e);
 			}
+
+		}
+
+		public void parse_links(List<StatLink> links) {
+			for (StatLink l : links) {
+				NodePortTuple PoA = new NodePortTuple(Long.parseLong(l.src_switch), l.src_port);
+				log.warn("Parsing Link from ({} , {}) on ports ({}, {})",
+						new Object[]{l.src_switch,
+								l.dst_switch,
+								l.src_port,
+								l.dst_port,
+						});
+			}
+		}
+
+
+		public Route get_route(NodePortTuple startPoint, NodePortTuple endPoint) {
+			Route route =
+					routingEngine.getRoute(startPoint.getNodeId(),
+							startPoint.getPortId(),
+							endPoint.getNodeId(),
+							endPoint.getPortId(), 0); //cookie = 0, i.e., default route
+			return route;
+		}
+
+
+		//***************
+		// GSON CLASSES
+		//***************
+
+
+		public class DeviceInfo {
+
+			public String entityClass;
+			public String[] mac;
+			public String[] ipv4;
+			public String[] vlan;
+			public Map<String, String>[] attachmentPoint;
+			public long lastSeen;
+			public String dhcpClientName;
+
+
+			public DeviceInfo() {
+				// add stuff later
+			}
+
+			public String toString() {
+				StringBuilder sb = new StringBuilder();
+				sb.append("--------- device description ---------\n");
+				sb.append("entityClass: ");
+				sb.append(entityClass);
+
+				sb.append("\n--------- device description  end ---------\n");
+				return sb.toString();
+
+			}
+		}
+
+		public class StatLink {
+			@SerializedName("src-switch")
+			public String src_switch;
+
+			@SerializedName("src-port")
+			public int src_port;
+
+			@SerializedName("dst-switch")
+			public String dst_switch;
+
+			@SerializedName("dst-port")
+			public int dst_port;
+
+			public String type;
+			public String direction;
+			public int latency;
+
+			public StatLink() {
+				// add stuff later
+			}
+
+			public String toString() {
+				StringBuilder sb = new StringBuilder();
+				sb.append("--------- link description ---------\n");
+				sb.append("src-switch: ");
+				sb.append(src_switch);
+				sb.append("\nsrc-port: ");
+				sb.append(src_port);
+				sb.append("\ndst-switch: ");
+				sb.append(dst_switch);
+				sb.append("\ndst-port: ");
+				sb.append(dst_port);
+				sb.append("\ntype: ");
+				sb.append(type);
+				sb.append("\ndirection: ");
+				sb.append(direction);
+				sb.append("\nlatency: ");
+				sb.append(latency);
+				sb.append("\n----- link description  end -----");
+
+				return sb.toString();
+
+			}
+		}
+
+		public class PortStat {
+
+			public String portNumber; // 1,2,3 etc or "local"
+			public long receivePackets;
+			public long transmitPackets;
+			public long receiveBytes;
+			public long transmitBytes;
+			public long receiveDropped;
+			public long transmitDropped;
+			public long receiveErrors;
+			public long transmitErrors;
+			public long receiveFrameErrors;
+			public long receiveOverrunErrors;
+			public long receiveCRCErrors;
+			public long collisions;
+
+			public PortStat() {
+				// might need me later
+			}
+
+			public String toString() {
+				StringBuilder sb = new StringBuilder();
+
+				sb.append("---------- port statistics --------");
+				sb.append("\nport_number: ");
+				sb.append(portNumber);
+				sb.append("\nreceive_packets: ");
+				sb.append(receivePackets);
+				sb.append("\ntransmit_packets: ");
+				sb.append(transmitPackets);
+				sb.append("\nreceive_bytes: ");
+				sb.append(receiveBytes);
+				sb.append("\ntransmit_bytes: ");
+				sb.append(transmitBytes);
+				sb.append("\nreceive_dropped: ");
+				sb.append(receiveDropped);
+				sb.append("\ntransmit_dropped: ");
+				sb.append(transmitDropped);
+				sb.append("\nreceive_errors: ");
+				sb.append(receiveErrors);
+				sb.append("\ntransmit_errors: ");
+				sb.append(transmitErrors);
+				sb.append("\nreceive_frame_errors: ");
+				sb.append(receiveFrameErrors);
+				sb.append("\nreceive_overrun_errors: ");
+				sb.append(receiveOverrunErrors);
+				sb.append("\nreceive_CRC_errors: ");
+				sb.append(receiveCRCErrors);
+				sb.append("\ncollisions: ");
+				sb.append(collisions);
+				sb.append("\n---------- end --------");
+
+				return sb.toString();
+			}
 		}
 	}
-
-
-	public class DeviceInfo {
-
-		public String entityClass;
-		public String[] mac;
-		public String[] ipv4;
-		public String[] vlan;
-		public Map<String, String>[] attachmentPoint;
-		public long lastSeen;
-		public String dhcpClientName;
-
-
-
-		public DeviceInfo() {
-			// add stuff later
-		}
-
-		public String toString() {
-			StringBuilder sb = new StringBuilder();
-			sb.append("--------- device description ---------\n");
-			sb.append("entityClass: ");
-			sb.append(entityClass);
-
-			sb.append("\n--------- device description  end ---------\n");
-			return sb.toString();
-
-		}
-	}
-
 
 
 
@@ -360,6 +504,8 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 	@Override
 	public void init(FloodlightModuleContext cntx) throws FloodlightModuleException {
 		floodlightProvider = cntx.getServiceImpl(IFloodlightProviderService.class);
+		routingEngine = cntx.getServiceImpl(IRoutingService.class);
+		linkEngine = cntx.getServiceImpl(ILinkDiscoveryService.class);
 		log = LoggerFactory.getLogger(LinkVerifier.class);
 	}
 
