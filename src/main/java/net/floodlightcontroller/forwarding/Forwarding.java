@@ -163,7 +163,6 @@ public class Forwarding extends ForwardingBase implements IFloodlightModule {
                                  boolean requestFlowRemovedNotifn) {
         OFMatch match = new OFMatch();
         match.loadFromPacket(pi.getPacketData(), pi.getInPort());
-
         // Check if we have the location of the destination
         IDevice dstDevice =
                 IDeviceService.fcStore.

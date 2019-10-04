@@ -57,14 +57,14 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
     protected static Logger log;
     public static final String MODULE_NAME = "linkverifier";
     protected TopologyInstance currentInstance;
-    
+
     private Random rand;
 
 
 	private Map<NodePortTuple, Link> linkMap =new HashMap<>();//Key = NodePortTuple, Value=Link
-	private Map<String, SwitchPort[]> deviceMap = new HashMap<>();//Key =HostIP , Value= AttachmentPoints
-	private Map<Integer, List<String>> packetMap = new HashMap<>();//Key = PacketId, Value = {time, srcSw, dstSw}
-	
+	private Map<String, IDevice> deviceMap = new HashMap<>();//Key =HostIP , Value= AttachmentPoints
+	private Map<Integer, String[]> packetMap = new HashMap<>();//Key = PacketId, Value = {time, srcSw, dstSw}
+
 	private StatisticsManager statManager;
 
 	private enum GetterType {
@@ -82,21 +82,26 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 			Ethernet eth = IFloodlightProviderService.bcStore.get(cntx, IFloodlightProviderService.CONTEXT_PI_PAYLOAD);
 
 			if(eth.getPayload() instanceof IPv4) { /* IF IPV4, CHECK IF HIDDEN PACKET */
-				log.info("WEB GETTING DEVICES");
+				get_host_devices();
 				//(new WebGetter(GetterType.DEVICES, deviceMap, linkMap, null, null)).start();
 
-				IPv4 packet = (IPv4) eth.getPayload();
+				if(packetMap.isEmpty() && !deviceMap.isEmpty()) {
 
+					new HiddenPacketWorker(floodlightProvider, packetMap, get_random_host_addr()).start();
+				}
+
+				IPv4 packet = (IPv4) eth.getPayload();
+				log.info("Received {}", packet.hashCode());
+				//if the pkt hash is in the system, and this is the expected switch for it
 				if(packetMap.containsKey(packet.hashCode())) {
-					List<String> info = packetMap.remove(packet.hashCode());
-					log.info("A hidden packet has been returned to the controller");
+					String[] info = packetMap.remove(packet.hashCode());
+					log.info("\n\nA hidden packet has been returned to the controller\n\n");
 				} else {
 					return Command.CONTINUE; //not a HP, so process normally
 				}
 
 			}
 		}
-
 		return Command.CONTINUE;
 	}
 
@@ -107,34 +112,39 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 
 
 	/**
-	 * Randomly selects a host IP addresses from the DeviceMap
-	 * @return int host IP address
+	 * Randomly selects two different host IP addresses from the DeviceMap
+	 * @return String[] two host IP addresses
 	 */
-	public int get_random_host_addr(){
-		Object[] ips = deviceMap.keySet().toArray();
-		int IP1 = (int)ips[rand.nextInt(ips.length)];
-		return IP1;
+	public String[] get_random_host_addr(){
+		Object[] addrs = deviceMap.keySet().toArray();
+		Object IP1 = addrs[rand.nextInt(addrs.length)];
+		Object IP2;
+
+		do{
+			IP2 = addrs[rand.nextInt(addrs.length)];
+		} while (IP1.equals(IP2));
+
+		String[] result = {IP1.toString(), IP2.toString()};
+		return result;
 	}
 
-	public Route get_route(NodePortTuple startPoint, NodePortTuple endPoint){
+	public Route get_route(SwitchPort startPoint, SwitchPort endPoint){
 		log.info("Getting route information...");
 		Route route =
-				routingEngine.getRoute(startPoint.getNodeId(),
-						startPoint.getPortId(),
-						endPoint.getNodeId(),
-						endPoint.getPortId(), 0); //cookie = 0, i.e., default route
+				routingEngine.getRoute(startPoint.getSwitchDPID(),
+						(short) startPoint.getPort(),
+						endPoint.getSwitchDPID(),
+						(short) endPoint.getPort(), 0); //cookie = 0, i.e., default route
 		return route;
 	}
 
 	public void get_host_devices(){
-		log.info("Getting device information...");
-
 		for(IDevice d : deviceEngine.getAllDevices()){
-			if(d.getIPv4Addresses() == null) continue;
-			SwitchPort[] values = d.getAttachmentPoints();
-			deviceMap.put(d.getIPv4Addresses().toString(), values);
+			Integer[] addrs = d.getIPv4Addresses();
+			if(addrs.length == 0) continue;
+			deviceMap.put(IPv4.fromIPv4Address(addrs[0]), d);
 		}
-
+		log.info("{} devices added...", deviceMap.size());
 	}
 
 
@@ -157,18 +167,19 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 
 		public HiddenPacketWorker(IFloodlightProviderService provider,
 							Map<Integer, String[]> packetMap,
-							String h1_IP, String h2_IP) {
+							String[] hosts) {
 			this.provider = provider;
 			this.packetMap = packetMap;
-			this.h1_IP = h1_IP;
-			this.h2_IP = h2_IP;
+			this.h1_IP =hosts[0];
+			this.h2_IP = hosts[1];
 		}
 
 		public void run() {
-
-        IOFSwitch srcSw = provider.getSwitch((deviceMap.get(h1_IP)[0]).getSwitchDPID());
-        IOFSwitch dstSw = provider.getSwitch((deviceMap.get(h2_IP)[0]).getSwitchDPID());
-
+		log.warn("HPV: {} -> {}", h1_IP, h2_IP);
+        IOFSwitch srcSw =  provider.getSwitch((deviceMap.get(h1_IP).getAttachmentPoints()[0]).getSwitchDPID());
+        IOFSwitch dstSw = provider.getSwitch((deviceMap.get(h2_IP).getAttachmentPoints()[0]).getSwitchDPID());
+        List<NodePortTuple> route = get_route((deviceMap.get(h1_IP).getAttachmentPoints()[0]),
+												(deviceMap.get(h2_IP).getAttachmentPoints()[0])).getPath();
 
         if (srcSw == null || dstSw == null) {
             log.warn("Switch on path is offline");
@@ -176,27 +187,29 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
         }
 
         IPacket eth = generate_payload();
-        int hash = eth.hashCode();
-
         OFPacketOut po = generate_packet_out(eth);
-        OFMessage flowMod = generate_flow_rule((IPv4)eth.getPayload());
+		//route.size - 2, in order to get the packets entry port on the last switch
+        OFMessage flowMod = generate_flow_rule(eth.getPayload(), route.get(route.size() - 2).getPortId());
 
+        int hash = eth.getPayload().hashCode();
         try {
-        	log.info("Sending HPV into the system");
+        	log.info("Sending FlowMod into the system");
             //INSTALL FLOW RULE IN END POINT
             dstSw.write(flowMod, null);
             dstSw.flush();
 
+			log.info("Sending HPV {} into the system", hash);
             //SEND HIDDEN PACKET INTO SYSTEM
             srcSw.write(po, null);
             srcSw.flush();
-            String[] info = {Long.toString(System.currentTimeMillis()), ""};
+
+            String[] info = {dstSw.getStringId(), Long.toString(System.currentTimeMillis())};
             packetMap.put(hash, info);
 
             //WAIT FOR IT TO RETURN
             Thread.sleep(500);
 
-            if(packetMap.containsKey(eth.getPayload().hashCode())){
+            if(packetMap.containsKey(hash)){
                 log.warn("HP WAS NOT RETURNED IN 500ms");
             } else {
                 log.warn("HP WAS RETURNED IN 500ms");
@@ -208,25 +221,25 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 			return;
 		}
 
+		public IPacket generate_payload(){
+			byte[] randomBytes = new byte[15];
+			new Random().nextBytes(randomBytes);
 
-    public IPacket generate_payload(){
-
-		IPacket eth = new Ethernet()
-				.setDestinationMACAddress("00:11:22:33:44:55")
-				.setSourceMACAddress("00:44:33:22:11:00")
-				.setEtherType(Ethernet.TYPE_IPv4)
-				.setPayload(
-						new IPv4()
-								.setTtl((byte) 128)
-								.setSourceAddress(h1_IP)
-								.setDestinationAddress(h2_IP)
-								.setPayload(new UDP()
-										.setSourcePort((short) 5000)
-										.setDestinationPort((short) 5001)
-										.setPayload(new Data(new byte[] {0x01}))));
-
-        return eth;
-    }
+			IPacket eth = new Ethernet()
+					.setSourceMACAddress(deviceMap.get(h1_IP).getMACAddressString())
+					.setDestinationMACAddress(deviceMap.get(h2_IP).getMACAddressString())
+					.setEtherType(Ethernet.TYPE_IPv4)
+					.setPayload(
+							new IPv4()
+									.setTtl((byte) 128)
+									.setSourceAddress(h1_IP)
+									.setDestinationAddress(h2_IP)
+									.setPayload(new UDP()
+											.setSourcePort((short) deviceMap.get(h1_IP).getAttachmentPoints()[0].getPort())
+											.setDestinationPort((short) deviceMap.get(h2_IP).getAttachmentPoints()[0].getPort())
+											.setPayload(new Data(randomBytes))));
+			return eth;
+		}
 
 		public OFPacketOut generate_packet_out(IPacket eth){
 
@@ -249,25 +262,28 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 			return po;
 		}
 
-		public OFMessage generate_flow_rule(IPv4 packet){
-			//TODO this port should be changed when shortest route is figured out
+		public OFMessage generate_flow_rule(IPacket packet, short dstPort){
 			OFMatch match = new OFMatch().loadFromPacket(packet.serialize(), OFPort.OFPP_ALL.getValue());
 
 			List<OFAction> actions = new ArrayList<>();
 			actions.add(new OFActionOutput(OFPort.OFPP_CONTROLLER.getValue()));
 
 			OFMessage flowMod = ((OFFlowMod) provider.getOFMessageFactory().getMessage(OFType.FLOW_MOD))
-					.setMatch(match).setCommand(OFFlowMod.OFPFC_ADD)
-					.setOutPort(OFPort.OFPP_NONE)
 					.setActions(actions)
+					.setBufferId(OFPacketOut.BUFFER_ID_NONE)
+					.setCommand(OFFlowMod.OFPFC_ADD)
 					.setHardTimeout((short)5) //timeout rule after 5 seconds
-					.setPriority((short)1).setLength(U16.t(OFFlowMod.MINIMUM_LENGTH));
+					.setMatch(match)
+					.setBufferId(OFPacketOut.BUFFER_ID_NONE)
+					.setOutPort(OFPort.OFPP_NONE)
+					.setPriority(Short.MAX_VALUE)
+					.setLength((short) (OFFlowMod.MINIMUM_LENGTH + OFActionOutput.MINIMUM_LENGTH));
+
 			return flowMod;
 		}
 
 	}
-
-
+	/*
 	public class WebGetter extends Thread {
 		private final String ipAddress = "localhost";
 		private final String port = "8080";
@@ -285,7 +301,7 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 			this.startPoint = startPoint;
 			this.endPoint = endPoint;
 		}
-		
+
 		public WebGetter() {
 			//constructor used for utility methods
 		}
@@ -517,7 +533,7 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 		}
 	}
 
-
+*/
 
 
 	//***************
@@ -527,7 +543,7 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 	public String getName() {
 		return MODULE_NAME;
 	}
-	
+
 	@Override
 	public void init(FloodlightModuleContext cntx) throws FloodlightModuleException {
 		floodlightProvider = cntx.getServiceImpl(IFloodlightProviderService.class);
@@ -553,7 +569,7 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 		        new ArrayList<Class<? extends IFloodlightService>>();
 		    l.add(IFloodlightProviderService.class);
 		    return l;
-		    
+
 	}
 
 	@Override
@@ -567,7 +583,7 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 		// TODO Auto-generated method stub
 		return null;
 	}
-	
+
 	@Override
 	public boolean isCallbackOrderingPrereq(OFType type, String name) {
 		return (type.equals(OFType.PACKET_IN) && name.equals("linkdiscovery"));

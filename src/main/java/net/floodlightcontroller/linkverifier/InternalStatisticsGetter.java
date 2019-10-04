@@ -34,7 +34,7 @@ public class InternalStatisticsGetter extends Thread {
 	}
 
     public void run() {
-
+/*
 	log.warn("\n\n-- STATS for (switch,port) pairs ({}, {}) and ({}, {}) --\n",
 			new Object[] {sw1.getStringId(),
 				link.getSrcPort(),
@@ -57,7 +57,7 @@ public class InternalStatisticsGetter extends Thread {
 				sw2Stats.getReceiveBytes(),
 				sw2Stats.getTransmitBytes(),
 			});
-
+*/
         return;
     }
 
