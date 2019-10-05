@@ -34,6 +34,9 @@ public class InternalStatisticsGetter extends Thread {
 	}
 
     public void run() {
+    	
+    	
+    //does this still work or did you just comment it out so it doesn't spam the console? - Luke
 /*
 	log.warn("\n\n-- STATS for (switch,port) pairs ({}, {}) and ({}, {}) --\n",
 			new Object[] {sw1.getStringId(),

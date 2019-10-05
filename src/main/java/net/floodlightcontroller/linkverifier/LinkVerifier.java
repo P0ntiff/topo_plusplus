@@ -66,6 +66,7 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 	private Map<Integer, String[]> packetMap = new HashMap<>();//Key = PacketId, Value = {time, srcSw, dstSw}
 
 	private StatisticsManager statManager;
+	private HiddenPacketWorker hpvWorker;
 
 	private enum GetterType {
 		DEVICES,
@@ -83,12 +84,11 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 
 			if(eth.getPayload() instanceof IPv4) { /* IF IPV4, CHECK IF HIDDEN PACKET */
 				get_host_devices();
-				//(new WebGetter(GetterType.DEVICES, deviceMap, linkMap, null, null)).start();
 
-				if(packetMap.isEmpty() && !deviceMap.isEmpty()) {
-
-					new HiddenPacketWorker(floodlightProvider, packetMap, get_random_host_addr()).start();
-				}
+//				if(packetMap.isEmpty() && !deviceMap.isEmpty()) {
+//
+//					new HiddenPacketWorker(floodlightProvider, packetMap, ).start();
+//				}
 
 				IPv4 packet = (IPv4) eth.getPayload();
 				log.info("Received {}", packet.hashCode());
@@ -117,10 +117,12 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 	 */
 	public String[] get_random_host_addr(){
 		Object[] addrs = deviceMap.keySet().toArray();
-		Object IP1 = addrs[rand.nextInt(addrs.length)];
-		Object IP2;
+		if (addrs.length < 2) return null; // only 0 or 1 hosts in the system.
+		
+		Object IP1, IP2;
 
-		do{
+		do {
+			IP1 = addrs[rand.nextInt(addrs.length)];
 			IP2 = addrs[rand.nextInt(addrs.length)];
 		} while (IP1.equals(IP2));
 
@@ -166,59 +168,93 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 
 
 		public HiddenPacketWorker(IFloodlightProviderService provider,
-							Map<Integer, String[]> packetMap,
-							String[] hosts) {
+							Map<Integer, String[]> packetMap) {
 			this.provider = provider;
 			this.packetMap = packetMap;
-			this.h1_IP =hosts[0];
-			this.h2_IP = hosts[1];
 		}
 
 		public void run() {
-		log.warn("HPV: {} -> {}", h1_IP, h2_IP);
-        IOFSwitch srcSw =  provider.getSwitch((deviceMap.get(h1_IP).getAttachmentPoints()[0]).getSwitchDPID());
-        IOFSwitch dstSw = provider.getSwitch((deviceMap.get(h2_IP).getAttachmentPoints()[0]).getSwitchDPID());
-        List<NodePortTuple> route = get_route((deviceMap.get(h1_IP).getAttachmentPoints()[0]),
-												(deviceMap.get(h2_IP).getAttachmentPoints()[0])).getPath();
-
-        if (srcSw == null || dstSw == null) {
-            log.warn("Switch on path is offline");
-            return; //switch is offline, do nothing
-        }
-
-        IPacket eth = generate_payload();
-        OFPacketOut po = generate_packet_out(eth);
-		//route.size - 2, in order to get the packets entry port on the last switch
-        OFMessage flowMod = generate_flow_rule(eth.getPayload(), route.get(route.size() - 2).getPortId());
-
-        int hash = eth.getPayload().hashCode();
-        try {
-        	log.info("Sending FlowMod into the system");
-            //INSTALL FLOW RULE IN END POINT
-            dstSw.write(flowMod, null);
-            dstSw.flush();
-
-			log.info("Sending HPV {} into the system", hash);
-            //SEND HIDDEN PACKET INTO SYSTEM
-            srcSw.write(po, null);
-            srcSw.flush();
-
-            String[] info = {dstSw.getStringId(), Long.toString(System.currentTimeMillis())};
-            packetMap.put(hash, info);
-
-            //WAIT FOR IT TO RETURN
-            Thread.sleep(500);
-
-            if(packetMap.containsKey(hash)){
-                log.warn("HP WAS NOT RETURNED IN 500ms");
-            } else {
-                log.warn("HP WAS RETURNED IN 500ms");
-            }
-
-        } catch (Exception e) {
-            log.error("Cannot write probing message to SW " + srcSw.getStringId());
-        }
-			return;
+			
+			while (true) { //Continually verify links forever
+				
+				//grab two new random hosts
+				String[] hosts = get_random_host_addr();
+				this.h1_IP = hosts[0];
+				this.h2_IP = hosts[1];
+			
+				log.warn("HPV: {} -> {}", h1_IP, h2_IP);
+		        IOFSwitch srcSw =  provider.getSwitch((deviceMap.get(h1_IP).getAttachmentPoints()[0]).getSwitchDPID());
+		        IOFSwitch dstSw = provider.getSwitch((deviceMap.get(h2_IP).getAttachmentPoints()[0]).getSwitchDPID());
+		        List<NodePortTuple> route = get_route((deviceMap.get(h1_IP).getAttachmentPoints()[0]),
+														(deviceMap.get(h2_IP).getAttachmentPoints()[0])).getPath();
+		
+		        if (route.size() < 4) { // I think 4 is the right number here? Correct me if I am wrong - Luke
+		        	log.warn("Only 1 switch on path, no links to check");
+		            break; //do nothing, no links to check
+		        }
+		        
+		        if (srcSw == null || dstSw == null) {
+		            log.warn("Switch on path is offline");
+		            break; //switch is offline, do nothing
+		        }
+		        
+		        //begin verifying links on path
+		        boolean complete = false; //has the verification proccess completed?
+		        int index = route.size() - 2;
+		        
+		        while (!complete) {
+		        	
+		        	if (index < 4) break; // finished verifying
+		        	
+		        	dstSw = provider.getSwitch(route.get(index).getNodeId());
+		        	if (dstSw == null) {
+		        		log.warn("Switch on path is offline");
+			            return; //switch is offline, do nothing
+		        	}
+	
+			        IPacket eth = generate_payload();
+			        OFPacketOut po = generate_packet_out(generate_payload());
+					//route.size - 2, in order to get the packets entry port on the last switch
+			        OFMessage flowMod = generate_flow_rule(eth.getPayload(), route.get(index).getPortId());
+			
+			        int hash = eth.getPayload().hashCode();
+			        try {
+			        	log.info("Sending FlowMod into the system");
+			            //INSTALL FLOW RULE IN END POINT
+			            dstSw.write(flowMod, null);
+			            dstSw.flush();
+			
+						log.info("Sending HPV {} into the system", hash);
+			            //SEND HIDDEN PACKET INTO SYSTEM
+			            srcSw.write(po, null);
+			            srcSw.flush();
+			
+			            String[] info = {dstSw.getStringId(), Long.toString(System.currentTimeMillis())};
+			            packetMap.put(hash, info);
+			
+			            //WAIT FOR IT TO RETURN
+			            Thread.sleep(500); //TODO use the receive method to wake up the thread early to speed things up
+			
+			            if(packetMap.containsKey(hash)){
+			                log.warn("HP WAS NOT RETURNED IN 500ms");
+			                log.warn("Reducing path by 1 switch");
+			            } else {
+			                log.warn("HP WAS RETURNED IN 500ms");
+			                if (index != route.size() - 2) log.warn("Found bad link between switch x and switch y"); //TODO append link details
+			                else log.warn("All links on path have been verified");
+			                complete = true;
+			            }
+			
+			        } catch (Exception e) {
+			            log.error("Cannot write probing message to SW " + srcSw.getStringId());
+			            // gotta catch 'em all
+			            // TODO fix this exception handling to be more specific
+			        }
+			        
+			        index -= 2; // I think it is -2 because each switch as an in and an out. (untested)
+		        }
+			}
+	
 		}
 
 		public IPacket generate_payload(){
@@ -553,6 +589,8 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 
 		log = LoggerFactory.getLogger(LinkVerifier.class);
 		statManager = new StatisticsManager(linkEngine, floodlightProvider);
+		hpvWorker = new HiddenPacketWorker(floodlightProvider, packetMap);
+		
 		rand = new Random();
 	}
 
@@ -561,6 +599,7 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 		// OpenFlow messages we want to receive
         floodlightProvider.addOFMessageListener(OFType.PACKET_IN, this);
 		statManager.start();
+		hpvWorker.start();
 	}
 
 	@Override
