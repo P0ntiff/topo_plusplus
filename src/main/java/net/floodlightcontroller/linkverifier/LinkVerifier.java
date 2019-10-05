@@ -48,17 +48,16 @@ import com.google.gson.reflect.TypeToken;
  */
 public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloodlightService> {
 
-// Instance Variables
+	// Instance Variables
 	protected IFloodlightProviderService floodlightProvider;
 	protected IRoutingService routingEngine;
 	protected ILinkDiscoveryService linkEngine;
 	protected IDeviceService deviceEngine;
-	protected IDeviceService statisticsEngine;
-    protected static Logger log;
-    public static final String MODULE_NAME = "linkverifier";
-    protected TopologyInstance currentInstance;
+	protected static Logger log;
+	public static final String MODULE_NAME = "linkverifier";
 
-    private Random rand;
+
+	private Random rand;
 
 
 	private Map<NodePortTuple, Link> linkMap =new HashMap<>();//Key = NodePortTuple, Value=Link
@@ -67,6 +66,7 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 
 	private StatisticsManager statManager;
 	private HiddenPacketWorker hpvWorker;
+	private boolean hpvStarted = false;
 
 	private enum GetterType {
 		DEVICES,
@@ -81,18 +81,20 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 
 		if(msg.getType().equals(OFType.PACKET_IN)) {
 			Ethernet eth = IFloodlightProviderService.bcStore.get(cntx, IFloodlightProviderService.CONTEXT_PI_PAYLOAD);
+			if(eth.getPayload() instanceof ARP) {
+				//only tart HPV when hosts are present
+				if(!hpvStarted) {
+					hpvWorker.start();
+					hpvStarted = true;
+				}
+			}
 
-			if(eth.getPayload() instanceof IPv4) { /* IF IPV4, CHECK IF HIDDEN PACKET */
-				get_host_devices();
-
-//				if(packetMap.isEmpty() && !deviceMap.isEmpty()) {
-//
-//					new HiddenPacketWorker(floodlightProvider, packetMap, ).start();
-//				}
+			if(eth.getPayload() instanceof IPv4) {
 
 				IPv4 packet = (IPv4) eth.getPayload();
-				log.info("Received {}", packet.hashCode());
 				//if the pkt hash is in the system, and this is the expected switch for it
+
+				log.info("Received {} from {}", packet.hashCode(), sw.getStringId());
 				if(packetMap.containsKey(packet.hashCode())) {
 					String[] info = packetMap.remove(packet.hashCode());
 					log.info("\n\nA hidden packet has been returned to the controller\n\n");
@@ -118,7 +120,7 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 	public String[] get_random_host_addr(){
 		Object[] addrs = deviceMap.keySet().toArray();
 		if (addrs.length < 2) return null; // only 0 or 1 hosts in the system.
-		
+
 		Object IP1, IP2;
 
 		do {
@@ -146,10 +148,13 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 			if(addrs.length == 0) continue;
 			deviceMap.put(IPv4.fromIPv4Address(addrs[0]), d);
 		}
-		log.info("{} devices added...", deviceMap.size());
+		log.info("{} devices in map...", deviceMap.size());
 	}
 
-
+	public void print_route(List<NodePortTuple> r){
+		log.info("-- ROUTE --");
+		for(int i = 0; i < r.size(); i++) log.info("> {}", r.get(i));
+	}
 
 	//***************
 	// NESTED CLASSES
@@ -168,93 +173,132 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 
 
 		public HiddenPacketWorker(IFloodlightProviderService provider,
-							Map<Integer, String[]> packetMap) {
+								  Map<Integer, String[]> packetMap) {
 			this.provider = provider;
 			this.packetMap = packetMap;
 		}
 
 		public void run() {
-			
+
 			while (true) { //Continually verify links forever
-				
-				//grab two new random hosts
+				log.info("\n\nHPV ROUND\n\n");
+
+				get_host_devices();
+
+				if(deviceMap.size() < 2) {
+					log.info("HPV: Not enough devices detected, exiting...");
+					hpvStarted = false;
+					break;
+				}
+
+				//Randomly select end-to-end hosts
 				String[] hosts = get_random_host_addr();
 				this.h1_IP = hosts[0];
 				this.h2_IP = hosts[1];
-			
-				log.warn("HPV: {} -> {}", h1_IP, h2_IP);
-		        IOFSwitch srcSw =  provider.getSwitch((deviceMap.get(h1_IP).getAttachmentPoints()[0]).getSwitchDPID());
-		        IOFSwitch dstSw = provider.getSwitch((deviceMap.get(h2_IP).getAttachmentPoints()[0]).getSwitchDPID());
-		        List<NodePortTuple> route = get_route((deviceMap.get(h1_IP).getAttachmentPoints()[0]),
-														(deviceMap.get(h2_IP).getAttachmentPoints()[0])).getPath();
-		
-		        if (route.size() < 4) { // I think 4 is the right number here? Correct me if I am wrong - Luke
-		        	log.warn("Only 1 switch on path, no links to check");
-		            break; //do nothing, no links to check
-		        }
-		        
-		        if (srcSw == null || dstSw == null) {
-		            log.warn("Switch on path is offline");
-		            break; //switch is offline, do nothing
-		        }
-		        
-		        //begin verifying links on path
-		        boolean complete = false; //has the verification proccess completed?
-		        int index = route.size() - 2;
-		        
-		        while (!complete) {
-		        	
-		        	if (index < 4) break; // finished verifying
-		        	
-		        	dstSw = provider.getSwitch(route.get(index).getNodeId());
-		        	if (dstSw == null) {
-		        		log.warn("Switch on path is offline");
-			            return; //switch is offline, do nothing
-		        	}
-	
-			        IPacket eth = generate_payload();
-			        OFPacketOut po = generate_packet_out(generate_payload());
-					//route.size - 2, in order to get the packets entry port on the last switch
-			        OFMessage flowMod = generate_flow_rule(eth.getPayload(), route.get(index).getPortId());
-			
-			        int hash = eth.getPayload().hashCode();
-			        try {
-			        	log.info("Sending FlowMod into the system");
-			            //INSTALL FLOW RULE IN END POINT
-			            dstSw.write(flowMod, null);
-			            dstSw.flush();
-			
-						log.info("Sending HPV {} into the system", hash);
-			            //SEND HIDDEN PACKET INTO SYSTEM
-			            srcSw.write(po, null);
-			            srcSw.flush();
-			
-			            String[] info = {dstSw.getStringId(), Long.toString(System.currentTimeMillis())};
-			            packetMap.put(hash, info);
-			
-			            //WAIT FOR IT TO RETURN
-			            Thread.sleep(500); //TODO use the receive method to wake up the thread early to speed things up
-			
-			            if(packetMap.containsKey(hash)){
-			                log.warn("HP WAS NOT RETURNED IN 500ms");
-			                log.warn("Reducing path by 1 switch");
-			            } else {
-			                log.warn("HP WAS RETURNED IN 500ms");
-			                if (index != route.size() - 2) log.warn("Found bad link between switch x and switch y"); //TODO append link details
-			                else log.warn("All links on path have been verified");
-			                complete = true;
-			            }
-			
-			        } catch (Exception e) {
-			            log.error("Cannot write probing message to SW " + srcSw.getStringId());
-			            // gotta catch 'em all
-			            // TODO fix this exception handling to be more specific
-			        }
-			        
-			        index -= 2; // I think it is -2 because each switch as an in and an out. (untested)
-		        }
+
+				//Calculate route between these hosts
+				IOFSwitch srcSw =  provider.getSwitch((deviceMap.get(h1_IP).getAttachmentPoints()[0]).getSwitchDPID());
+				IOFSwitch dstSw = provider.getSwitch((deviceMap.get(h2_IP).getAttachmentPoints()[0]).getSwitchDPID());
+				List<NodePortTuple> route = get_route((deviceMap.get(h1_IP).getAttachmentPoints()[0]),
+						(deviceMap.get(h2_IP).getAttachmentPoints()[0])).getPath();
+
+				log.warn("HPV: {} -> {}, Route Size = {}",
+						new Object[] {h1_IP,
+								h2_IP,
+								route.size(),
+						});
+
+
+
+				if (srcSw == null || dstSw == null) {
+					log.info("HPV: Switch on path is offline");
+					continue; //try again
+				}
+
+				if (route.size() < 4) {
+					log.info("HPV: Only 1 switch on path, no links to check");
+					continue; //try again
+				}
+
+				//Begin verifying links in path
+				boolean complete = false; //has the verification process completed?
+				int index = route.size() - 2; //route.size - 2, in order to get the packets entry port on the last switch
+
+				while (!complete) {
+
+					log.info("HPV: Checking Index in Route {}/{}", index, route.size() - 1);
+
+					//down to one switch
+					if (index < 2) {
+						log.info("HPV: All links in path checked", index);
+						break; // finished verifying
+					}
+
+					dstSw = provider.getSwitch(route.get(index).getNodeId());
+					if (dstSw == null) {
+						log.info("HPV: Switch {} on path is offline", dstSw.getStringId());
+						break;
+					}
+
+					IPacket eth = generate_payload();
+					OFPacketOut po = generate_packet_out(eth);
+					OFMessage flowMod = generate_flow_rule(eth.getPayload(), route.get(index).getPortId());
+					int hash = eth.getPayload().hashCode();
+
+					try {
+						//Install rule in current end-point
+						log.info("HPV: Sending Flow-Mod to {}", dstSw.getStringId());
+						dstSw.write(flowMod, null);
+						dstSw.flush();
+
+						//Send Hidden Packet
+						log.info("HPV: Sending packet ({}) to {}", hash, srcSw.getStringId());
+						srcSw.write(po, null);
+						srcSw.flush();
+
+						//Put the hidden packet into the map
+						String[] info = {dstSw.getStringId(), Long.toString(System.currentTimeMillis())};
+						packetMap.put(hash, info);
+
+						//Wait for HP return
+						this.sleep(500);
+
+						if(packetMap.containsKey(hash)){
+							log.warn("HPV: HiddenPacket was not returned, reducing path by 1 switch");
+						}
+						else {
+							//issue of a HPV being received by the correct switch, but after the delay
+							//migrate logic into the receive()?
+							log.warn("HPV: HiddenPacket successfully returned");
+
+							//if this is not the end-point switch,
+							//then the next hop in the path is suspicious
+							//as this is where the packet was lost in the previous round
+							if (index != route.size() - 2) {
+								log.warn("HPV: Suspicious Link = ({}, {}) -> ({}, {})",
+										new Object[] {route.get(index).getNodeId(),
+												route.get(index).getPortId(),
+												route.get(index + 1).getNodeId(),
+												route.get(index + 1).getPortId(),
+										});
+							}
+							else log.warn("All links on path have been verified");
+							complete = true;
+						}
+
+					} catch (IOException e) {
+						log.error("Cannot write probing message to SW " + srcSw.getStringId());
+
+					} catch (InterruptedException e) {
+						//interrupted thread from receive method() to force wake up
+						log.error("HPV Thread Interruption");
+					}
+
+					index -= 2; //-2 to get entry port
+				}
+
 			}
-	
+			return;
 		}
 
 		public IPacket generate_payload(){
@@ -573,8 +617,8 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 
 
 	//***************
-    // IFloodlightModule
-    //***************
+	// IFloodlightModule
+	//***************
 	@Override
 	public String getName() {
 		return MODULE_NAME;
@@ -590,24 +634,23 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 		log = LoggerFactory.getLogger(LinkVerifier.class);
 		statManager = new StatisticsManager(linkEngine, floodlightProvider);
 		hpvWorker = new HiddenPacketWorker(floodlightProvider, packetMap);
-		
+
 		rand = new Random();
 	}
 
 	@Override
 	public void startUp(FloodlightModuleContext arg0) throws FloodlightModuleException {
 		// OpenFlow messages we want to receive
-        floodlightProvider.addOFMessageListener(OFType.PACKET_IN, this);
+		floodlightProvider.addOFMessageListener(OFType.PACKET_IN, this);
 		statManager.start();
-		hpvWorker.start();
 	}
 
 	@Override
 	public Collection<Class<? extends IFloodlightService>> getModuleDependencies() {
 		Collection<Class<? extends IFloodlightService>> l =
-		        new ArrayList<Class<? extends IFloodlightService>>();
-		    l.add(IFloodlightProviderService.class);
-		    return l;
+				new ArrayList<Class<? extends IFloodlightService>>();
+		l.add(IFloodlightProviderService.class);
+		return l;
 
 	}
 
@@ -634,3 +677,4 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 	}
 
 }
+
