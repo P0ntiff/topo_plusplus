@@ -66,7 +66,7 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 
 	private StatisticsManager statManager;
 	private HiddenPacketWorker hpvWorker;
-	private boolean hpvStarted = false;
+
 
 	private enum GetterType {
 		DEVICES,
@@ -81,23 +81,21 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 
 		if(msg.getType().equals(OFType.PACKET_IN)) {
 			Ethernet eth = IFloodlightProviderService.bcStore.get(cntx, IFloodlightProviderService.CONTEXT_PI_PAYLOAD);
-			if(eth.getPayload() instanceof ARP) {
-				//only tart HPV when hosts are present
-				if(!hpvStarted) {
-					hpvWorker.start();
-					hpvStarted = true;
-				}
-			}
 
 			if(eth.getPayload() instanceof IPv4) {
 
 				IPv4 packet = (IPv4) eth.getPayload();
 				//if the pkt hash is in the system, and this is the expected switch for it
 
-				log.info("Received {} from {}", packet.hashCode(), sw.getStringId());
+				//log.info("Received {} from {}", packet.hashCode(), sw.getStringId());
 				if(packetMap.containsKey(packet.hashCode())) {
 					String[] info = packetMap.remove(packet.hashCode());
-					log.info("\n\nA hidden packet has been returned to the controller\n\n");
+					log.info("\n\nA hidden packet ({}) has been returned from {}\n\n", packet.hashCode(), sw.getStringId());
+
+					if(!sw.getStringId().equals(info[0])) {
+						log.warn("\nHPV: Not returned from correct end point switch");
+					}
+					return Command.STOP; //gobble up the hidden packet
 				} else {
 					return Command.CONTINUE; //not a HP, so process normally
 				}
@@ -143,6 +141,7 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 	}
 
 	public void get_host_devices(){
+		deviceMap.clear();
 		for(IDevice d : deviceEngine.getAllDevices()){
 			Integer[] addrs = d.getIPv4Addresses();
 			if(addrs.length == 0) continue;
@@ -181,20 +180,26 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 		public void run() {
 
 			while (true) { //Continually verify links forever
-				log.info("\n\nHPV ROUND\n\n");
+				log.info("\n\n\nHPV ROUND\n\n\n");
 
 				get_host_devices();
 
 				if(deviceMap.size() < 2) {
-					log.info("HPV: Not enough devices detected, exiting...");
-					hpvStarted = false;
-					break;
+					log.info("HPV: Not enough devices detected...");
+					try{
+						this.sleep(1000);
+					} catch (InterruptedException e){
+						log.info("Thread interrupted");
+					}
+					continue;
 				}
 
 				//Randomly select end-to-end hosts
 				String[] hosts = get_random_host_addr();
 				this.h1_IP = hosts[0];
 				this.h2_IP = hosts[1];
+
+
 
 				//Calculate route between these hosts
 				IOFSwitch srcSw =  provider.getSwitch((deviceMap.get(h1_IP).getAttachmentPoints()[0]).getSwitchDPID());
@@ -208,7 +213,7 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 								route.size(),
 						});
 
-
+				print_route(route);
 
 				if (srcSw == null || dstSw == null) {
 					log.info("HPV: Switch on path is offline");
@@ -230,7 +235,7 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 
 					//down to one switch
 					if (index < 2) {
-						log.info("HPV: All links in path checked", index);
+						log.info("HPV: All links in path checked, suspicious first link", index);
 						break; // finished verifying
 					}
 
@@ -275,7 +280,7 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 							//then the next hop in the path is suspicious
 							//as this is where the packet was lost in the previous round
 							if (index != route.size() - 2) {
-								log.warn("HPV: Suspicious Link = ({}, {}) -> ({}, {})",
+								log.warn("\n\n\nHPV: Suspicious Link = ({}, {}) -> ({}, {})\n\n\n",
 										new Object[] {route.get(index).getNodeId(),
 												route.get(index).getPortId(),
 												route.get(index + 1).getNodeId(),
@@ -293,12 +298,11 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 						//interrupted thread from receive method() to force wake up
 						log.error("HPV Thread Interruption");
 					}
-
 					index -= 2; //-2 to get entry port
 				}
 
 			}
-			return;
+
 		}
 
 		public IPacket generate_payload(){
@@ -363,258 +367,6 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 		}
 
 	}
-	/*
-	public class WebGetter extends Thread {
-		private final String ipAddress = "localhost";
-		private final String port = "8080";
-		private GetterType type;
-		private Map<String, List<NodePortTuple>> deviceMap; //Key = IP, Value = List of PoA's
-		private Map<Link, LinkInfo> linkMap; //Key = NodePortTuple, Value=Link
-		private NodePortTuple startPoint;
-		private NodePortTuple endPoint;
-
-		public WebGetter(GetterType type, Map<String, List<NodePortTuple>> deviceMap,
-						 Map<Link, LinkInfo> linkMap, NodePortTuple startPoint, NodePortTuple endPoint) {
-			this.type = type;
-			this.deviceMap = deviceMap;
-			this.linkMap = linkMap;
-			this.startPoint = startPoint;
-			this.endPoint = endPoint;
-		}
-
-		public WebGetter() {
-			//constructor used for utility methods
-		}
-
-		public BufferedReader makeWebRequest(String path) throws IOException {
-			URL url = new URL("http://" + ipAddress + ":" + port + path);
-			URLConnection con = url.openConnection();
-			InputStream is = con.getInputStream();
-			return new BufferedReader(new InputStreamReader(is));
-		}
-
-		public void run() {
-			switch (type) {
-				case DEVICES:
-
-					break;
-				case ROUTES:
-					log.info("Getting route information...");
-					Route route =
-							routingEngine.getRoute(startPoint.getNodeId(),
-									startPoint.getPortId(),
-									endPoint.getNodeId(),
-									endPoint.getPortId(), 0); //cookie = 0, i.e., default route
-					//TODO do something with this
-					break;
-				case LINKS:
-					log.info("Getting link information...");
-					linkMap = linkEngine.getLinks();
-
-					break;
-				default:
-					break;
-			}
-			return;
-		}
-
-		public void get_devices() {
-			try {
-				Gson gson = new Gson();
-				BufferedReader linkReq = makeWebRequest("/wm/device/");
-				List<DeviceInfo> devices = gson.fromJson(linkReq, new TypeToken<LinkedList<DeviceInfo>>() {
-				}.getType());
-				parse_devices(devices);
-			} catch (Exception e) {
-				log.warn("\n\nError in get_devices WebRequest {}\n\n", e);
-			}
-		}
-
-		public void parse_devices(List<DeviceInfo> devices) {
-			log.info("Parsing deivces...");
-			for (DeviceInfo d : devices) {
-				if (d.ipv4.length == 0) continue;
-
-				List<NodePortTuple> values = new ArrayList<>();
-
-				for (Map<String, String> info : d.attachmentPoint) {
-					long dpid = Long.parseLong(info.get("switchDPID").replace(":", ""));
-					NodePortTuple val = new NodePortTuple(dpid, Short.parseShort(info.get("port")));
-
-					values.add(val);
-				}
-
-				deviceMap.put(d.ipv4[0], values);
-
-			}
-
-			log.info("Device map of size {}", deviceMap.size());
-
-		}
-
-		public void get_links() {
-			try {
-				Gson gson = new Gson();
-				BufferedReader linkReq = makeWebRequest("/wm/topology/links/json");
-				List<StatLink> links = gson.fromJson(linkReq, new TypeToken<LinkedList<StatLink>>() {
-				}.getType());
-				parse_links(links);
-			} catch (Exception e) {
-				log.warn("\n\nError in Link Verification WebRequest {}\n\n", e);
-			}
-
-		}
-
-		public void parse_links(List<StatLink> links) {
-			for (StatLink l : links) {
-				NodePortTuple PoA = new NodePortTuple(Long.parseLong(l.src_switch), l.src_port);
-				log.warn("Parsing Link from ({} , {}) on ports ({}, {})",
-						new Object[]{l.src_switch,
-								l.dst_switch,
-								l.src_port,
-								l.dst_port,
-						});
-			}
-		}
-
-
-
-		//***************
-		// GSON CLASSES
-		//***************
-
-
-		public class DeviceInfo {
-
-			public String entityClass;
-			public String[] mac;
-			public String[] ipv4;
-			public String[] vlan;
-			public Map<String, String>[] attachmentPoint;
-			public long lastSeen;
-			public String dhcpClientName;
-
-
-			public DeviceInfo() {
-				// add stuff later
-			}
-
-			public String toString() {
-				StringBuilder sb = new StringBuilder();
-				sb.append("--------- device description ---------\n");
-				sb.append("entityClass: ");
-				sb.append(entityClass);
-
-				sb.append("\n--------- device description  end ---------\n");
-				return sb.toString();
-
-			}
-		}
-
-		public class StatLink {
-			@SerializedName("src-switch")
-			public String src_switch;
-
-			@SerializedName("src-port")
-			public int src_port;
-
-			@SerializedName("dst-switch")
-			public String dst_switch;
-
-			@SerializedName("dst-port")
-			public int dst_port;
-
-			public String type;
-			public String direction;
-			public int latency;
-
-			public StatLink() {
-				// add stuff later
-			}
-
-			public String toString() {
-				StringBuilder sb = new StringBuilder();
-				sb.append("--------- link description ---------\n");
-				sb.append("src-switch: ");
-				sb.append(src_switch);
-				sb.append("\nsrc-port: ");
-				sb.append(src_port);
-				sb.append("\ndst-switch: ");
-				sb.append(dst_switch);
-				sb.append("\ndst-port: ");
-				sb.append(dst_port);
-				sb.append("\ntype: ");
-				sb.append(type);
-				sb.append("\ndirection: ");
-				sb.append(direction);
-				sb.append("\nlatency: ");
-				sb.append(latency);
-				sb.append("\n----- link description  end -----");
-
-				return sb.toString();
-
-			}
-		}
-
-		public class PortStat {
-
-			public String portNumber; // 1,2,3 etc or "local"
-			public long receivePackets;
-			public long transmitPackets;
-			public long receiveBytes;
-			public long transmitBytes;
-			public long receiveDropped;
-			public long transmitDropped;
-			public long receiveErrors;
-			public long transmitErrors;
-			public long receiveFrameErrors;
-			public long receiveOverrunErrors;
-			public long receiveCRCErrors;
-			public long collisions;
-
-			public PortStat() {
-				// might need me later
-			}
-
-			public String toString() {
-				StringBuilder sb = new StringBuilder();
-
-				sb.append("---------- port statistics --------");
-				sb.append("\nport_number: ");
-				sb.append(portNumber);
-				sb.append("\nreceive_packets: ");
-				sb.append(receivePackets);
-				sb.append("\ntransmit_packets: ");
-				sb.append(transmitPackets);
-				sb.append("\nreceive_bytes: ");
-				sb.append(receiveBytes);
-				sb.append("\ntransmit_bytes: ");
-				sb.append(transmitBytes);
-				sb.append("\nreceive_dropped: ");
-				sb.append(receiveDropped);
-				sb.append("\ntransmit_dropped: ");
-				sb.append(transmitDropped);
-				sb.append("\nreceive_errors: ");
-				sb.append(receiveErrors);
-				sb.append("\ntransmit_errors: ");
-				sb.append(transmitErrors);
-				sb.append("\nreceive_frame_errors: ");
-				sb.append(receiveFrameErrors);
-				sb.append("\nreceive_overrun_errors: ");
-				sb.append(receiveOverrunErrors);
-				sb.append("\nreceive_CRC_errors: ");
-				sb.append(receiveCRCErrors);
-				sb.append("\ncollisions: ");
-				sb.append(collisions);
-				sb.append("\n---------- end --------");
-
-				return sb.toString();
-			}
-		}
-	}
-
-*/
-
 
 	//***************
 	// IFloodlightModule
@@ -643,6 +395,7 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 		// OpenFlow messages we want to receive
 		floodlightProvider.addOFMessageListener(OFType.PACKET_IN, this);
 		statManager.start();
+		hpvWorker.start();
 	}
 
 	@Override
@@ -677,4 +430,5 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 	}
 
 }
+
 
