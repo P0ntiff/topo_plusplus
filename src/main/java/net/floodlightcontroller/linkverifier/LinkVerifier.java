@@ -89,13 +89,18 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 
 				//log.info("Received {} from {}", packet.hashCode(), sw.getStringId());
 				if(packetMap.containsKey(packet.hashCode())) {
-					String[] info = packetMap.remove(packet.hashCode());
+					
+					String[] info = packetMap.get(packet.hashCode());
 					log.info("\n\nA hidden packet ({}) has been returned from {}\n\n", packet.hashCode(), sw.getStringId());
 
 					if(!sw.getStringId().equals(info[0])) {
 						log.warn("\nHPV: Not returned from correct end point switch");
+						return Command.CONTINUE;
+					} else {
+						packetMap.remove(packet.hashCode());
+						return Command.STOP; //gobble up the hidden packet
 					}
-					return Command.STOP; //gobble up the hidden packet
+					
 				} else {
 					return Command.CONTINUE; //not a HP, so process normally
 				}
@@ -241,7 +246,7 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 
 					dstSw = provider.getSwitch(route.get(index).getNodeId());
 					if (dstSw == null) {
-						log.info("HPV: Switch {} on path is offline", dstSw.getStringId());
+						log.info("HPV: Switch {} on path is offline", route.get(index).getNodeId());
 						break;
 					}
 
@@ -267,11 +272,13 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 
 						//Wait for HP return
 						this.sleep(500);
-
+						
 						if(packetMap.containsKey(hash)){
 							log.warn("HPV: HiddenPacket was not returned, reducing path by 1 switch");
+							packetMap.remove(hash);
 						}
-						else {
+						else {							
+							
 							//issue of a HPV being received by the correct switch, but after the delay
 							//migrate logic into the receive()?
 							log.warn("HPV: HiddenPacket successfully returned");
@@ -356,7 +363,7 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 					.setActions(actions)
 					.setBufferId(OFPacketOut.BUFFER_ID_NONE)
 					.setCommand(OFFlowMod.OFPFC_ADD)
-					.setHardTimeout((short)5) //timeout rule after 5 seconds
+					.setHardTimeout((short)1) //timeout rule after 1 seconds
 					.setMatch(match)
 					.setBufferId(OFPacketOut.BUFFER_ID_NONE)
 					.setOutPort(OFPort.OFPP_NONE)
@@ -403,6 +410,7 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 		Collection<Class<? extends IFloodlightService>> l =
 				new ArrayList<Class<? extends IFloodlightService>>();
 		l.add(IFloodlightProviderService.class);
+		l.add(IRoutingService.class);
 		return l;
 
 	}
@@ -421,7 +429,9 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 
 	@Override
 	public boolean isCallbackOrderingPrereq(OFType type, String name) {
-		return (type.equals(OFType.PACKET_IN) && name.equals("linkdiscovery"));
+        return (type.equals(OFType.PACKET_IN) &&
+                (name.equals("topology") ||
+                 name.equals("devicemanager")));
 	}
 
 	@Override
