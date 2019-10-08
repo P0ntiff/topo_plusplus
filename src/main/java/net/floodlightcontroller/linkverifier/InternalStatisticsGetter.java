@@ -3,6 +3,7 @@ package net.floodlightcontroller.linkverifier;
 import java.util.*;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+
 import net.floodlightcontroller.core.IFloodlightProviderService;
 import org.openflow.protocol.OFStatisticsRequest;
 import org.openflow.protocol.statistics.*;
@@ -12,56 +13,40 @@ import org.slf4j.LoggerFactory;
 import net.floodlightcontroller.core.IOFSwitch;
 import net.floodlightcontroller.routing.Link;
 
-public class InternalStatisticsGetter extends Thread {
+public class InternalStatisticsGetter {
 
     protected IFloodlightProviderService provider;
 
-    private Link link;
-    private IOFSwitch sw1;
-    private IOFSwitch sw2;
-
     protected static Logger log;
      
-    public InternalStatisticsGetter(Link link, IFloodlightProviderService floodlightProvider) {
+    public InternalStatisticsGetter(IFloodlightProviderService floodlightProvider) {
     	log = LoggerFactory.getLogger(InternalStatisticsGetter.class);
-    	
         this.provider = floodlightProvider;
-
-        this.link = link;
-       	this.sw1 = provider.getSwitch(link.getSrc());
-       	this.sw2 = provider.getSwitch(link.getDst());
 
 	}
 
-    public void run() {
-    	
-    	
-    //does this still work or did you just comment it out so it doesn't spam the console? - Luke
-/*
-	log.warn("\n\n-- STATS for (switch,port) pairs ({}, {}) and ({}, {}) --\n",
-			new Object[] {sw1.getStringId(),
-				link.getSrcPort(),
-				sw2.getStringId(),
-				link.getDstPort(),
-				});
+    /**
+     * Returns a list (length = 2) of statistics associated with link
+     * Statistics come from ports at either end of link
+     *
+     * @author jaric.thorning
+     * @param link
+     * @return
+     */
+	public List<OFPortStatisticsReply> getLinkStatistics(Link link) {
+
+        List<OFPortStatisticsReply> returnStats = new ArrayList<OFPortStatisticsReply>();
+
+        IOFSwitch sw1 = provider.getSwitch(link.getSrc());
+        IOFSwitch sw2 = provider.getSwitch(link.getDst());
 
         OFPortStatisticsReply sw1Stats = (OFPortStatisticsReply)getPortStatistics(sw1, link.getSrcPort()).get(0);
-	    OFPortStatisticsReply sw2Stats = (OFPortStatisticsReply)getPortStatistics(sw2, link.getDstPort()).get(0);
+        OFPortStatisticsReply sw2Stats = (OFPortStatisticsReply)getPortStatistics(sw2, link.getDstPort()).get(0);
 
-	log.warn("\n({}, {}): received {}B, transmitted {}B.\n",
-			new Object[] {sw1.getStringId(),
-				sw1Stats.getPortNumber(),
-				sw1Stats.getReceiveBytes(),
-				sw1Stats.getTransmitBytes(),
-			});
-	log.warn("\n({}, {}): received {}B, transmitted {}B.\n",
-			new Object[] {sw2.getStringId(),
-				sw2Stats.getPortNumber(),
-				sw2Stats.getReceiveBytes(),
-				sw2Stats.getTransmitBytes(),
-			});
-*/
-        return;
+        returnStats.add(sw1Stats);
+        returnStats.add(sw2Stats);
+
+        return returnStats;
     }
 
     public List<OFStatistics> getPortStatistics(IOFSwitch sw, short port) {
