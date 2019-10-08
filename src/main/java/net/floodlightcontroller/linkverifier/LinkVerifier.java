@@ -206,10 +206,22 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 
 
 				//Calculate route between these hosts
-				IOFSwitch srcSw =  provider.getSwitch((deviceMap.get(h1_IP).getAttachmentPoints()[0]).getSwitchDPID());
-				IOFSwitch dstSw = provider.getSwitch((deviceMap.get(h2_IP).getAttachmentPoints()[0]).getSwitchDPID());
-				List<NodePortTuple> route = get_route((deviceMap.get(h1_IP).getAttachmentPoints()[0]),
-						(deviceMap.get(h2_IP).getAttachmentPoints()[0])).getPath();
+				IOFSwitch srcSw, dstSw;
+				try {
+					srcSw =  provider.getSwitch((deviceMap.get(h1_IP).getAttachmentPoints()[0]).getSwitchDPID());
+					dstSw = provider.getSwitch((deviceMap.get(h2_IP).getAttachmentPoints()[0]).getSwitchDPID());
+				} catch (ArrayIndexOutOfBoundsException e) {
+					log.info("HPV: No attachment point");
+					continue;
+				}
+				
+				List<NodePortTuple> route;				
+				try {
+					route = get_route((deviceMap.get(h1_IP).getAttachmentPoints()[0]), (deviceMap.get(h2_IP).getAttachmentPoints()[0])).getPath();
+				} catch (NullPointerException e) {
+					log.info("HPV: No route found between {} and {}", h1_IP, h2_IP);
+					continue;
+				}
 
 				log.warn("HPV: {} -> {}, Route Size = {}",
 						new Object[] {h1_IP,
@@ -249,11 +261,11 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 						break;
 					}
 
-					IPacket eth = generate_payload();
-					OFPacketOut po = generate_packet_out(eth, route.get(1).getPortId());
+					Ethernet eth = generate_payload();
+					OFPacketOut po = generate_packet_out(eth, route.get(0).getPortId(), route.get(1).getPortId());
 					//not sure if this should be eth or eth.getPayload
 					//using eth gives a "data field empty" error
-					OFMessage flowMod = generate_flow_rule(eth.getPayload(), route.get(index).getPortId());
+					OFMessage flowMod = generate_flow_rule(eth, route.get(index).getPortId());
 					int hash = eth.getPayload().hashCode();
 
 					try {
@@ -272,7 +284,7 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 						packetMap.put(hash, info);
 
 						//Wait for HP return
-						this.sleep(500);
+						this.sleep(1000);
 						
 						if(packetMap.containsKey(hash)){
 							log.warn("HPV: HiddenPacket was not returned, reducing path by 1 switch");
@@ -313,11 +325,11 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 
 		}
 
-		public IPacket generate_payload(){
+		public Ethernet generate_payload(){
 			byte[] randomBytes = new byte[15];
 			new Random().nextBytes(randomBytes);
 
-			IPacket eth = new Ethernet()
+			Ethernet eth = (Ethernet) new Ethernet()
 					.setSourceMACAddress(deviceMap.get(h1_IP).getMACAddressString())
 					.setDestinationMACAddress(deviceMap.get(h2_IP).getMACAddressString())
 					.setEtherType(Ethernet.TYPE_IPv4)
@@ -326,51 +338,49 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 									.setTtl((byte) 128)
 									.setSourceAddress(h1_IP)
 									.setDestinationAddress(h2_IP)
+									.setProtocol((byte) 17)
 									.setPayload(new UDP()
-											.setSourcePort((short) deviceMap.get(h1_IP).getAttachmentPoints()[0].getPort())
-											.setDestinationPort((short) deviceMap.get(h2_IP).getAttachmentPoints()[0].getPort())
+											.setSourcePort((short) 20)
+											.setDestinationPort((short) 30)
 											.setPayload(new Data(randomBytes))));
 			return eth;
 		}
 
-		public OFPacketOut generate_packet_out(IPacket eth, short outPort){
-
-			List<OFAction> actions = new ArrayList<>();
-			OFActionOutput out = (OFActionOutput) provider.getOFMessageFactory().getAction(OFActionType.OUTPUT);
-			out.setPort(outPort);
-			actions.add(out);
-
-			OFPacketOut po = (OFPacketOut) provider.getOFMessageFactory().getMessage((OFType.PACKET_OUT));
+		public OFPacketOut generate_packet_out(Ethernet eth, short inPort, short outPort){
 			byte[] data = eth.serialize();
-
-			po.setPacketData(data);
-			po.setActions(actions);
+			OFPacketOut po = (OFPacketOut) floodlightProvider.getOFMessageFactory()
+                    .getMessage(OFType.PACKET_OUT);
 			po.setBufferId(OFPacketOut.BUFFER_ID_NONE);
-			po.setInPort(OFPort.OFPP_NONE);
-			po.setActionsLength((short) OFActionOutput.MINIMUM_LENGTH);
-			po.setLengthU(OFPacketOut.MINIMUM_LENGTH + data.length + po.getActionsLength());
-
+	        //po.setInPort(OFPort.OFPP_NONE);
+	        po.setInPort(inPort);
+	        po.setLengthU(OFPacketOut.MINIMUM_LENGTH + data.length);
+	        po.setPacketData(data);
+			List<OFAction> actions = new ArrayList<>();
+			OFActionOutput out = new OFActionOutput(outPort, (short) 0);
+			actions.add(out);
+			po.setActions(actions);
+			po.setActionsLength(out.getLength());
+			po.setLengthU(po.getLengthU() + po.getActionsLength());
 			return po;
 		}
 
-		public OFMessage generate_flow_rule(IPacket packet, short port){
-			OFMatch match = new OFMatch().loadFromPacket(packet.serialize(), port);
+		public OFMessage generate_flow_rule(IPacket packet, short inPort){
+			OFMatch match = new OFMatch().loadFromPacket(packet.serialize(), inPort);
 
 			List<OFAction> actions = new ArrayList<>();
-			OFActionOutput out = (OFActionOutput) provider.getOFMessageFactory().getAction(OFActionType.OUTPUT);
-			out.setPort(OFPort.OFPP_CONTROLLER.getValue());
+			OFActionOutput out = new OFActionOutput(OFPort.OFPP_CONTROLLER.getValue());
+			out.setMaxLength((short)0xffff);
 			actions.add(out);
-
+			
 			OFMessage flowMod = ((OFFlowMod) provider.getOFMessageFactory().getMessage(OFType.FLOW_MOD))
 					.setMatch(match)
 					.setActions(actions)
-					.setBufferId(OFPacketOut.BUFFER_ID_NONE)
 					.setCommand(OFFlowMod.OFPFC_ADD)
-					.setHardTimeout((short)1) //timeout rule after 5 seconds
-					.setBufferId(OFPacketOut.BUFFER_ID_NONE)
-					.setOutPort(OFPort.OFPP_CONTROLLER)
+					.setHardTimeout((short) 1) //timeout rule after 5 seconds
+					.setIdleTimeout((short) 0)
 					.setPriority(Short.MAX_VALUE)
-					.setLength((short) (OFFlowMod.MINIMUM_LENGTH + out.getLength()));
+					.setBufferId(OFPacketOut.BUFFER_ID_NONE)
+					.setLengthU(OFFlowMod.MINIMUM_LENGTH+OFActionOutput.MINIMUM_LENGTH);
 
 			return flowMod;
 		}
