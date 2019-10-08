@@ -402,7 +402,7 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 		// OpenFlow messages we want to receive
 		floodlightProvider.addOFMessageListener(OFType.PACKET_IN, this);
 		statManager.start();
-		hpvWorker.start();
+		//hpvWorker.start();
 	}
 
 	@Override

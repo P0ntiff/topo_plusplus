@@ -31,6 +31,7 @@ public class StatisticsManager extends Thread {
     		
     		for (Link link : linkEngine.getLinks().keySet()) { 
     			new InternalStatisticsGetter(link, provider).start();
+    			
     		}
     	}
     	

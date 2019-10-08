@@ -710,7 +710,7 @@ public class LinkDiscoveryManager implements IOFMessageListener,
                                boolean isStandard, FloodlightContext cntx) {
     	// If LLDP is suppressed on this port, ignore received packet as well
         // Or if it is malformed LLDP
-	log.warn("\n - GUARD+ LLDP ROUND - \n");
+	//log.warn("\n - GUARD+ LLDP ROUND - \n");
         IOFSwitch iofSwitch = floodlightProvider.getSwitch(sw);
         if (!isIncomingDiscoveryAllowed(sw, inPort, isStandard) || lldp.getPortId() == null || lldp.getPortId().getLength() != 3)
             return Command.STOP;
@@ -822,7 +822,8 @@ public class LinkDiscoveryManager implements IOFMessageListener,
         	// we consider 0 delay is not a good observation but means a low latency link
 	        if(LinkLatencyQueue.size() <  this.floodlightProvider.getAllSwitchDpids().size() * 1) {
 	        	LinkLatencyQueue.add(delay);
-	         // log.info("The switch link latency is " + delay + " ms" + " between sw " + sw + " and " + remoteSwitch.getId());
+
+	        	log.info("The switch link latency is " + delay + " ms" + " between sw " + sw + " and " + remoteSwitch.getId());
 
 	        }
 	        else {
@@ -834,11 +835,11 @@ public class LinkDiscoveryManager implements IOFMessageListener,
 	        	
 	        	if(delay > threshold) {
 	        		log.error("Deteced suspicious link discovery: an abnormal delay during LLDP propagation");
-	        		log.error("link delay is abnormal. delay:{}ms, threashold:{}ms", delay/1000000, threshold/1000000);
+	        		log.error(sw + " - " + remoteSwitch.getId() + " link delay is abnormal. delay:{}ms, threashold:{}ms", delay, threshold);
 	        		return Command.STOP;
 	        	}
 	        	else {
-	        	//	log.info("link delay is okay. delay:{}ms, threashold:{}ms", delay/1000000, threshold/1000000);
+	        		log.info(sw + " - " + remoteSwitch.getId() +  " link delay is okay. delay:{}ms, threashold:{}ms", delay, threshold);
 	            	LinkLatencyQueue.add(delay);
 	            }
   
