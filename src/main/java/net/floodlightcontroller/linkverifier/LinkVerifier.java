@@ -8,6 +8,7 @@ import net.floodlightcontroller.devicemanager.IDevice;
 import net.floodlightcontroller.devicemanager.IDeviceService;
 import net.floodlightcontroller.devicemanager.SwitchPort;
 import net.floodlightcontroller.linkdiscovery.ILinkDiscoveryService;
+import net.floodlightcontroller.linkdiscovery.LinkInfo;
 import net.floodlightcontroller.restserver.IRestApiService;
 import net.floodlightcontroller.routing.IRoutingService;
 import net.floodlightcontroller.routing.Link;
@@ -300,7 +301,7 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 								//TODO publish results
 							} else  {
 								log.warn("HPV: All links on path have been verified");
-								//TODO publish results
+								publishVerification(route, "Passed");
 							}
 							
 							if (reverse) {
@@ -332,6 +333,25 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 
 			}
 
+		}
+		
+		public void publishVerification(List<NodePortTuple> route, String status) {
+			
+			long now = System.currentTimeMillis();
+			
+			for (int i = 0; i < route.size() - 2; i += 2) {
+				
+				Link link = new Link(route.get(i + 1).getNodeId(), route.get(i + 1).getPortId(), route.get(i + 2).getNodeId(), route.get(i + 2).getPortId());
+				LinkInfo linkInfo = linkEngine.getLinks().get(link);
+				if (linkInfo != null) linkInfo.setLastHpvReceivedTime(now);
+				
+				//do reverse
+				
+				Link reverseLink = new Link(link.getDst(), link.getDstPort(), link.getSrc(), link.getSrcPort());
+				linkInfo = linkEngine.getLinks().get(reverseLink);
+				if (linkInfo != null) linkInfo.setLastHpvReceivedTime(now);
+			}
+			
 		}
 
 		public Ethernet generate_payload(){

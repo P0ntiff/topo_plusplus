@@ -58,9 +58,9 @@ public class LinkWithTopoInfo extends JsonSerializer<LinkWithTopoInfo> {
         this.dstPort = link.getDstPort();
         this.type = type;
         this.direction = direction;
-        this.lastLldpReceivedTime = info.getUnicastValidTime() / 1000000;
-        this.currentKnownDelay = info.getCurrentKnownDelay()  / 1000000;
-        this.lastHpvReceivedTime = info.getLastHpvReceivedTime() / 1000000;
+        this.lastLldpReceivedTime = info.getUnicastValidTime();
+        this.currentKnownDelay = info.getCurrentKnownDelay() / 1000000;
+        this.lastHpvReceivedTime = info.getLastHpvReceivedTime();
     }
 
     @Override
