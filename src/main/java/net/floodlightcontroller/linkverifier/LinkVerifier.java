@@ -61,9 +61,9 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 	private Random rand;
 
 
-	private Map<NodePortTuple, Link> linkMap =new HashMap<>();//Key = NodePortTuple, Value=Link
-	private Map<String, IDevice> deviceMap = new HashMap<>();//Key =HostIP , Value= AttachmentPoints
-	private Map<Integer, String[]> packetMap = new HashMap<>();//Key = PacketId, Value = {time, srcSw, dstSw}
+	private Map<NodePortTuple, Link> linkMap = new HashMap<>(); //Key = NodePortTuple, Value=Link
+	private Map<String, IDevice> deviceMap = new HashMap<>(); //Key =HostIP , Value= AttachmentPoints
+	private Map<Integer, String[]> packetMap = new HashMap<>(); //Key = PacketId, Value = {time, srcSw, dstSw}
 
 	private StatisticsManager statManager;
 	private HiddenPacketWorker hpvWorker;
@@ -93,12 +93,12 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 
 					String[] info = packetMap.get(packet.hashCode());
 					if(sw.getStringId().equals(info[0])) {
-						log.info("\n\nA hidden packet ({}) has been returned from {}\n\n", packet.hashCode(), sw.getStringId());
+						log.warn("HPV: A hidden packet ({}) has been returned from {}", packet.hashCode(), sw.getStringId());
 						packetMap.remove(packet.hashCode());
 						return Command.STOP; //gobble up hidden packet
 					}
 
-					log.info("\n\nHidden packet ({}) returned from incorrect switch {}\n\n", packet.hashCode(), sw.getStringId());
+					log.info("HPV: Hidden packet ({}) returned from incorrect switch {} (ignoring it)", packet.hashCode(), sw.getStringId());
 
 				} else {
 					return Command.CONTINUE; //not a HP, so process normally
@@ -191,7 +191,7 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 				if(deviceMap.size() < 2) {
 					log.info("HPV: Not enough devices detected...");
 					try{
-						this.sleep(1000);
+						Thread.sleep(1000);
 					} catch (InterruptedException e){
 						log.info("Thread interrupted");
 					}
@@ -244,14 +244,21 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 				//Begin verifying links in path
 				boolean complete = false; //has the verification process completed?
 				int index = route.size() - 2; //route.size - 2, in order to get the packets entry port on the last switch
+				boolean reverse = false; //reverse the verification direction
 
 				while (!complete) {
 
-					log.info("HPV: Checking Index in Route {}/{}", index, route.size() - 1);
+					log.info("HPV: Destination set to index in route {}/{}", index, route.size() - 1);
 
 					//down to one switch
-					if (index < 2) {
-						log.info("HPV: All links in path checked, suspicious first link", index);
+					if ((!reverse && index < 2) || (reverse && index > route.size() - 3)) {
+						log.warn("HPV: Suspicious Link = ({}, {}) -> ({}, {})", //suspicious first link
+								new Object[] {route.get(index + (reverse ? -1 : 1)).getNodeId(), //FIXME
+										route.get(index + (reverse ? -1 : 1)).getPortId(),
+										route.get(index + (reverse ? -2 : 2)).getNodeId(),
+										route.get(index + (reverse ? -2 : 2)).getPortId(),
+								});
+						//TODO publish results
 						break; // finished verifying
 					}
 
@@ -262,9 +269,10 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 					}
 
 					Ethernet eth = generate_payload();
-					OFPacketOut po = generate_packet_out(eth, route.get(0).getPortId(), route.get(1).getPortId());
-					//not sure if this should be eth or eth.getPayload
-					//using eth gives a "data field empty" error
+					OFPacketOut po;
+					if (!reverse) po = generate_packet_out(eth, route.get(0).getPortId(), route.get(1).getPortId());
+					else po = generate_packet_out(eth, route.get(route.size() - 1).getPortId(), route.get(route.size() - 2).getPortId());
+				
 					OFMessage flowMod = generate_flow_rule(eth, route.get(index).getPortId());
 					int hash = eth.getPayload().hashCode();
 
@@ -273,6 +281,9 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 						log.info("HPV: Sending Flow-Mod to {}", dstSw.getStringId());
 						dstSw.write(flowMod, null);
 						dstSw.flush();
+						
+						//give the rule a chance to install
+						Thread.sleep(100);
 
 						//Send Hidden Packet
 						log.info("HPV: Sending packet ({}) to {}", hash, srcSw.getStringId());
@@ -284,31 +295,44 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 						packetMap.put(hash, info);
 
 						//Wait for HP return
-						this.sleep(1000);
+						Thread.sleep(1000);
 						
-						if(packetMap.containsKey(hash)){
-							log.warn("HPV: HiddenPacket was not returned, reducing path by 1 switch");
+						if (packetMap.containsKey(hash)){
+							log.warn("HPV: HiddenPacket was not returned, reducing path by 1 link");
 							packetMap.remove(hash);
-						}
-						else {							
-							
-							//issue of a HPV being received by the correct switch, but after the delay
-							//migrate logic into the receive()?
+						} else {							
 							log.warn("HPV: HiddenPacket successfully returned");
 
 							//if this is not the end-point switch,
 							//then the next hop in the path is suspicious
 							//as this is where the packet was lost in the previous round
-							if (index != route.size() - 2) {
-								log.warn("\n\n\nHPV: Suspicious Link = ({}, {}) -> ({}, {})\n\n\n",
-										new Object[] {route.get(index).getNodeId(),
-												route.get(index).getPortId(),
-												route.get(index + 1).getNodeId(),
-												route.get(index + 1).getPortId(),
+							if ((!reverse && index != route.size() - 2) || (reverse && index != 1)) {
+								log.warn("HPV: Suspicious Link = ({}, {}) -> ({}, {})",
+										new Object[] {route.get(index + (reverse ? -1 : 1)).getNodeId(), //FIXME
+												route.get(index + (reverse ? -1 : 1)).getPortId(),
+												route.get(index + (reverse ? -2 : 2)).getNodeId(),
+												route.get(index + (reverse ? -2 : 2)).getPortId(),
 										});
+								//TODO publish results
+							} else  {
+								log.warn("HPV: All links on path have been verified");
+								//TODO publish results
 							}
-							else log.warn("All links on path have been verified");
-							complete = true;
+							
+							if (reverse) {
+								complete = true;
+							} else {
+								log.warn("HPV: Reversing direction of verification process");
+								reverse = true;
+								index = -1;
+								srcSw = provider.getSwitch(route.get(route.size() - 2).getNodeId());
+								
+								//swap IP addresses so the packet is correct
+								String tmp = h1_IP;
+								h1_IP = h2_IP;
+								h2_IP = tmp;
+								tmp = null;
+							}
 						}
 
 					} catch (IOException e) {
@@ -318,7 +342,8 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 						//interrupted thread from receive method() to force wake up
 						log.error("HPV Thread Interruption");
 					}
-					index -= 2; //-2 to get entry port
+					
+					index += reverse ? 2 : -2; //a switch consumes two indexes
 				}
 
 			}
