@@ -64,6 +64,7 @@ public class LinkInfo {
         this.lastBddpReceivedTime = null;
         this.currentKnownDelay = null;
         this.lastHpvReceivedTime = null;
+        this.hpvVerifiedStatus = false;
     }
 
     public LinkInfo(LinkInfo fromLinkInfo) {
@@ -72,6 +73,7 @@ public class LinkInfo {
         this.lastBddpReceivedTime = fromLinkInfo.getMulticastValidTime();
         this.currentKnownDelay = fromLinkInfo.getCurrentKnownDelay();
         this.lastHpvReceivedTime = fromLinkInfo.getLastHpvReceivedTime();
+        this.hpvVerifiedStatus = fromLinkInfo.getHpvVerifiedStatus();
     }
 
     protected Long firstSeenTime;
@@ -79,6 +81,7 @@ public class LinkInfo {
     protected Long lastBddpReceivedTime; /* Modified LLDP received time  */
     protected Long currentKnownDelay = 0L;   /* TopoGuard+ link delay information */
     protected Long lastHpvReceivedTime = 0L;    /* TopoGuard++ HPV information */
+    protected boolean hpvVerifiedStatus = false;   /* TopoGuard++ HPV status */
 
     /** The port states stored here are topology's last knowledge of
      * the state of the port. This mostly mirrors the state
@@ -130,6 +133,13 @@ public class LinkInfo {
         this.lastHpvReceivedTime = lastHpvReceivedTime;
     }
 
+    public boolean getHpvVerifiedStatus() {
+        return hpvVerifiedStatus;
+    }
+
+    public void setHpvVerifiedStatus(boolean hpvVerifiedStatus) {
+        this.hpvVerifiedStatus = hpvVerifiedStatus;
+    }
 
     @JsonIgnore
     public LinkType getLinkType() {
@@ -199,6 +209,10 @@ public class LinkInfo {
         } else if (!lastHpvReceivedTime.equals(other.lastHpvReceivedTime))
             return false;
 
+        if (other.hpvVerifiedStatus != hpvVerifiedStatus) {
+            return false;
+        }
+
         return true;
     }
 
@@ -211,6 +225,7 @@ public class LinkInfo {
         return "LinkInfo [unicastValidTime=" + ((lastLldpReceivedTime == null) ? "null" : lastLldpReceivedTime)
                 + ", multicastValidTime=" + ((lastBddpReceivedTime == null) ? "null" : lastBddpReceivedTime)
                 + ", currentKnownDelay=" + ((currentKnownDelay == null) ? "null" : currentKnownDelay)
-                + ", lastHpvReceivedTime=" + ((lastHpvReceivedTime == null) ? "null" : lastHpvReceivedTime) + "]";
+                + ", lastHpvReceivedTime=" + ((lastHpvReceivedTime == null) ? "null" : lastHpvReceivedTime)
+                + ", lastHpvReceivedTime=" + hpvVerifiedStatus + "]";
     }
 }

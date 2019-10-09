@@ -43,6 +43,7 @@ public class LinkWithTopoInfo extends JsonSerializer<LinkWithTopoInfo> {
     public long lastLldpReceivedTime;
     public long currentKnownDelay;
     public long lastHpvReceivedTime;
+    public int hpvVerifiedStatus;
     public LinkType type;
     public LinkDirection direction;
 
@@ -58,9 +59,10 @@ public class LinkWithTopoInfo extends JsonSerializer<LinkWithTopoInfo> {
         this.dstPort = link.getDstPort();
         this.type = type;
         this.direction = direction;
-        this.lastLldpReceivedTime = info.getUnicastValidTime() / 1000000;
+        this.lastLldpReceivedTime = info.getUnicastValidTime();
         this.currentKnownDelay = info.getCurrentKnownDelay()  / 1000000;
-        this.lastHpvReceivedTime = info.getLastHpvReceivedTime() / 1000000;
+        this.lastHpvReceivedTime = info.getLastHpvReceivedTime();
+        this.hpvVerifiedStatus = (info.getHpvVerifiedStatus() ? 1 : 0);
     }
 
     @Override
@@ -77,6 +79,7 @@ public class LinkWithTopoInfo extends JsonSerializer<LinkWithTopoInfo> {
         jgen.writeNumberField("last-lldp-received-time", lwt.lastLldpReceivedTime);
         jgen.writeNumberField("current-known-delay", lwt.currentKnownDelay);
         jgen.writeNumberField("last-hpv-received-time", lwt.lastHpvReceivedTime);
+        jgen.writeNumberField("hpv-verified-status", lwt.hpvVerifiedStatus);
         jgen.writeEndObject();
         return;
     }
