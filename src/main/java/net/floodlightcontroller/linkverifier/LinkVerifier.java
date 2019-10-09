@@ -402,6 +402,7 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 		l.add(IFloodlightProviderService.class);
 		l.add(IRoutingService.class);
 		l.add(IRestApiService.class);
+		l.add(ILinkDiscoveryService.class);
 
 		return l;
 

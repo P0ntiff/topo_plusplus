@@ -33,11 +33,11 @@ import java.util.Set;
 public class LinksVerificationResource extends ServerResource {
 
     @Get("json")
-    public Set<LinkWithType> retrieve() {
+    public Set<LinkWithTopoInfo> retrieve() {
         ILinkDiscoveryService ld = (ILinkDiscoveryService)getContext().getAttributes().
                 get(ILinkDiscoveryService.class.getCanonicalName());
         Map<Link, LinkInfo> links = new HashMap<Link, LinkInfo>();
-        Set<LinkWithType> returnLinkSet = new HashSet<LinkWithType>();
+        Set<LinkWithTopoInfo> returnLinkSet = new HashSet<LinkWithTopoInfo>();
 
         if (ld != null) {
             links.putAll(ld.getLinks());
@@ -45,7 +45,7 @@ public class LinksVerificationResource extends ServerResource {
                 LinkInfo info = links.get(link);
                 LinkType type = ld.getLinkType(link, info);
                 if (type == LinkType.DIRECT_LINK || type == LinkType.TUNNEL) {
-                    LinkWithType lwt;
+                    LinkWithTopoInfo lwt;
 
                     long src = link.getSrc();
                     long dst = link.getDst();
@@ -61,16 +61,16 @@ public class LinksVerificationResource extends ServerResource {
                         // This is a bi-direcitonal link.
                         // It is sufficient to add only one side of it.
                         if ((src < dst) || (src == dst && srcPort < dstPort)) {
-                            lwt = new LinkWithType(link,
+                            lwt = new LinkWithTopoInfo(link,
                                     type,
-                                    LinkDirection.BIDIRECTIONAL);
+                                    LinkDirection.BIDIRECTIONAL, info);
                             returnLinkSet.add(lwt);
                         }
                     } else {
                         // This is a unidirectional link.
-                        lwt = new LinkWithType(link,
+                        lwt = new LinkWithTopoInfo(link,
                                 type,
-                                LinkDirection.UNIDIRECTIONAL);
+                                LinkDirection.UNIDIRECTIONAL, info);
                         returnLinkSet.add(lwt);
 
                     }
