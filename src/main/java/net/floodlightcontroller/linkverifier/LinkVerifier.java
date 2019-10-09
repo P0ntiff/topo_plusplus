@@ -301,7 +301,7 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 								//TODO publish results
 							} else  {
 								log.warn("HPV: All links on path have been verified");
-								publishVerification(route, "Passed");
+								publishVerification(route, true);
 							}
 							
 							if (reverse) {
@@ -335,7 +335,7 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 
 		}
 		
-		public void publishVerification(List<NodePortTuple> route, String status) {
+		public void publishVerification(List<NodePortTuple> route, boolean status) {
 			
 			long now = System.currentTimeMillis();
 			
@@ -343,13 +343,19 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 				
 				Link link = new Link(route.get(i + 1).getNodeId(), route.get(i + 1).getPortId(), route.get(i + 2).getNodeId(), route.get(i + 2).getPortId());
 				LinkInfo linkInfo = linkEngine.getLinks().get(link);
-				if (linkInfo != null) linkInfo.setLastHpvReceivedTime(now);
+				if (linkInfo != null) {
+					linkInfo.setLastHpvReceivedTime(now);
+					linkInfo.setHpvVerifiedStatus(status);
+				}
 				
 				//do reverse
 				
 				Link reverseLink = new Link(link.getDst(), link.getDstPort(), link.getSrc(), link.getSrcPort());
 				linkInfo = linkEngine.getLinks().get(reverseLink);
-				if (linkInfo != null) linkInfo.setLastHpvReceivedTime(now);
+				if (linkInfo != null) {
+					linkInfo.setLastHpvReceivedTime(now);
+					linkInfo.setHpvVerifiedStatus(status);
+				}
 			}
 			
 		}
