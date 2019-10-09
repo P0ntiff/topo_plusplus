@@ -1498,6 +1498,10 @@ public class LinkDiscoveryManager implements IOFMessageListener,
             if (oldInfo.getCurrentKnownDelay() != 0L) {
                 newInfo.setCurrentKnownDelay(oldInfo.getCurrentKnownDelay());
             }
+        } else if (newInfo.getLastHpvReceivedTime() == 0L) {
+            if (oldInfo.getLastHpvReceivedTime() != 0L) {
+                newInfo.setLastHpvReceivedTime(oldInfo.getLastHpvReceivedTime());
+            }
         }
 
         Long oldTime = oldInfo.getUnicastValidTime();
@@ -1505,6 +1509,10 @@ public class LinkDiscoveryManager implements IOFMessageListener,
 
         Long oldDelay = oldInfo.getCurrentKnownDelay();
         Long newDelay = oldInfo.getCurrentKnownDelay();
+
+        Long oldHpvTime = oldInfo.getLastHpvReceivedTime();
+        Long newHpvTime = newInfo.getLastHpvReceivedTime();
+
         // the link has changed its state between openflow and
         // non-openflow
         // if the unicastValidTimes are null or not null
@@ -1518,7 +1526,12 @@ public class LinkDiscoveryManager implements IOFMessageListener,
         } else if (oldDelay == 0L & newDelay != 0L) {
             linkChanged = true;
         }
-
+        if (oldHpvTime != 0L & newHpvTime != 0L) {
+            linkChanged = true;
+        } else if (oldHpvTime == 0L & newHpvTime != 0L) {
+            linkChanged = true;
+        }
+        
         return linkChanged;
     }
 
