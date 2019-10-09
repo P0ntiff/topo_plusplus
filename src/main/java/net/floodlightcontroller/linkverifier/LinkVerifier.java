@@ -1,36 +1,22 @@
 package net.floodlightcontroller.linkverifier;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.net.URL;
-import java.net.URLConnection;
 import java.util.*;
 
-import com.google.gson.Gson;
-import com.google.gson.annotations.SerializedName;
-import com.google.gson.reflect.TypeToken;
 import net.floodlightcontroller.core.*;
-import net.floodlightcontroller.core.web.SwitchStatisticsResource;
 import net.floodlightcontroller.devicemanager.IDevice;
 import net.floodlightcontroller.devicemanager.IDeviceService;
 import net.floodlightcontroller.devicemanager.SwitchPort;
 import net.floodlightcontroller.linkdiscovery.ILinkDiscoveryService;
-import net.floodlightcontroller.linkdiscovery.LinkInfo;
-import net.floodlightcontroller.linkdiscovery.web.LinksResource;
+import net.floodlightcontroller.restserver.IRestApiService;
 import net.floodlightcontroller.routing.IRoutingService;
 import net.floodlightcontroller.routing.Link;
 import net.floodlightcontroller.routing.Route;
 import net.floodlightcontroller.topology.NodePortTuple;
-import net.floodlightcontroller.topology.TopologyInstance;
-import net.floodlightcontroller.topology.TopologyManager;
 import org.openflow.protocol.*;
 import org.openflow.protocol.action.OFAction;
 import org.openflow.protocol.action.OFActionOutput;
 import org.openflow.protocol.action.OFActionType;
-import org.openflow.util.U16;
-import org.sdnplatform.sync.internal.config.Node;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import net.floodlightcontroller.core.module.IFloodlightModule;
@@ -38,11 +24,8 @@ import net.floodlightcontroller.core.module.FloodlightModuleContext;
 import net.floodlightcontroller.core.module.FloodlightModuleException;
 import net.floodlightcontroller.core.module.IFloodlightService;
 import net.floodlightcontroller.packet.*;
-import com.google.gson.Gson;
-import com.google.gson.annotations.SerializedName;
-import com.google.gson.reflect.TypeToken;
 
-
+import net.floodlightcontroller.linkverifier.web.LinkVerifierWebRoutable;
 
 /*
  * TOPOGUARD++ CLASS FOR VERIFICATION OF FLOW BETWEEN LINKS
@@ -50,6 +33,7 @@ import com.google.gson.reflect.TypeToken;
 public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloodlightService> {
 
 	// Instance Variables
+	protected IRestApiService restApi;
 	protected IFloodlightProviderService floodlightProvider;
 	protected IRoutingService routingEngine;
 	protected ILinkDiscoveryService linkEngine;
@@ -389,6 +373,8 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 	public void init(FloodlightModuleContext cntx) throws FloodlightModuleException {
 		floodlightProvider = cntx.getServiceImpl(IFloodlightProviderService.class);
 		routingEngine = cntx.getServiceImpl(IRoutingService.class);
+		restApi = cntx.getServiceImpl(IRestApiService.class);
+
 		linkEngine = cntx.getServiceImpl(ILinkDiscoveryService.class);
 		deviceEngine = cntx.getServiceImpl(IDeviceService.class);
 
@@ -403,6 +389,8 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 	public void startUp(FloodlightModuleContext arg0) throws FloodlightModuleException {
 		// OpenFlow messages we want to receive
 		floodlightProvider.addOFMessageListener(OFType.PACKET_IN, this);
+		restApi.addRestletRoutable(new LinkVerifierWebRoutable());
+
 		statManager.start();
 		hpvWorker.start();
 	}
@@ -413,6 +401,8 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 				new ArrayList<Class<? extends IFloodlightService>>();
 		l.add(IFloodlightProviderService.class);
 		l.add(IRoutingService.class);
+		l.add(IRestApiService.class);
+
 		return l;
 
 	}
