@@ -800,14 +800,14 @@ public class LinkDiscoveryManager implements IOFMessageListener,
         
         for(Long hd : downTimes) {
         	if(sendTime < hd && hd < receiveTime) {
-        		log.error("Detected suspicious link: an abnormal port-down received during LLDP propagation");
+        		log.error("Detected suspicious link + (" + sw + " - " + remoteSwitch.getId() + ") + : an abnormal port-down received during LLDP propagation");
         		return Command.STOP;
         	}
         }
 
         for(Long hd : upTimes) {
         	if(sendTime < hd && hd < receiveTime) {
-        		log.error("Detected suspicious link: an abnormal port-up received during LLDP propagation");
+        		log.error("Detected suspicious link + (" + sw + " - " + remoteSwitch.getId() + ") : an abnormal port-up received during LLDP propagation");
         		return Command.STOP;
         	}
         }
@@ -835,11 +835,11 @@ public class LinkDiscoveryManager implements IOFMessageListener,
 	        	
 	        	if(delay > threshold) {
 	        		log.error("Deteced suspicious link discovery: an abnormal delay during LLDP propagation");
-	        		log.error(sw + " - " + remoteSwitch.getId() + " link delay is abnormal. delay:{}ms, threashold:{}ms", delay, threshold);
+	        		log.error(sw + " - " + remoteSwitch.getId() + " link delay is abnormal. delay:{}ms, threashold:{}ms", delay/1000000.0, threshold/1000000.0);
 	        		return Command.STOP;
 	        	}
 	        	else {
-	        		log.info(sw + " - " + remoteSwitch.getId() +  " link delay is okay. delay:{}ms, threashold:{}ms", delay, threshold);
+	        		log.info(sw + " - " + remoteSwitch.getId() +  " link delay is okay. delay:{}ms, threashold:{}ms", delay/1000000.0, threshold/1000000.0);
 	            	LinkLatencyQueue.add(delay);
 	            }
   
