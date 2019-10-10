@@ -243,8 +243,22 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 										route.get(index + (reverse ? -2 : 2)).getNodeId(),
 										route.get(index + (reverse ? -2 : 2)).getPortId(),
 								});
-						//TODO publish results
-						break; // finished verifying
+						publishVerification(route, index, reverse);
+						if (reverse) {
+							complete = true;
+						} else {
+							log.warn("HPV: Reversing direction of verification process");
+							reverse = true;
+							index = 1;
+							srcSw = provider.getSwitch(route.get(route.size() - 2).getNodeId());
+							
+							//swap IP addresses so the packet is correct
+							String tmp = h1_IP;
+							h1_IP = h2_IP;
+							h2_IP = tmp;
+							tmp = null;
+						}
+						continue;
 					}
 
 					dstSw = provider.getSwitch(route.get(index).getNodeId());
@@ -298,7 +312,6 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 												route.get(index + (reverse ? -2 : 2)).getNodeId(),
 												route.get(index + (reverse ? -2 : 2)).getPortId(),
 										});
-								//TODO publish results
 							} else  {
 								log.warn("HPV: All links on path have been verified");
 								publishVerification(route, index, reverse);
@@ -396,7 +409,7 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 						if (i > index) {
 							linkInfo.setHpvVerifiedStatus(true);
 						} else {
-							log.warn("Publish bad link at {} : {} -> {} : {}", new Object[] {link.getSrc(), link.getSrcPort(), link.getDst(), link.getDstPort()});
+							log.warn("Publish bad link at {} : {} -> {} : {}", new Object[] {reverseLink.getSrc(), reverseLink.getSrcPort(), reverseLink.getDst(), reverseLink.getDstPort()});
 							linkInfo.setHpvVerifiedStatus(false);
 						}
 					}
