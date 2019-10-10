@@ -282,7 +282,7 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 						dstSw.flush();
 						
 						//give the rule a chance to install
-						Thread.sleep(100);
+						Thread.sleep(200);
 
 						//Send Hidden Packet
 						log.info("HPV: Sending packet ({}) to {}", hash, srcSw.getStringId());
@@ -341,7 +341,7 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 						log.error("HPV Thread Interruption");
 					}
 					
-					index += reverse ? 2 : -2; //a switch consumes two indexes
+					index += reverse ? 2 : -2; // a switch consumes two indexes
 				}
 
 			}
@@ -365,7 +365,7 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 						if (i < index) {
 							linkInfo.setHpvVerifiedStatus(true);
 						} else {
-							log.warn("Publish bad link at {} : {} -> {} : {}", new Object[] {link.getSrc(), link.getSrcPort(), link.getDst(), link.getDstPort()});
+							//log.warn("Publish bad link at {} : {} -> {} : {}", new Object[] {link.getSrc(), link.getSrcPort(), link.getDst(), link.getDstPort()});
 							linkInfo.setHpvVerifiedStatus(false);
 						}
 					}
@@ -379,7 +379,7 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 						if (i < index) {
 							linkInfo.setHpvVerifiedStatus(true);
 						} else {
-							log.warn("Publish bad link at {} : {} -> {} : {}", new Object[] {link.getSrc(), link.getSrcPort(), link.getDst(), link.getDstPort()});
+							//log.warn("Publish bad link at {} : {} -> {} : {}", new Object[] {link.getSrc(), link.getSrcPort(), link.getDst(), link.getDstPort()});
 							linkInfo.setHpvVerifiedStatus(false);
 						}
 					}
@@ -395,7 +395,7 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 						if (i > index) {
 							linkInfo.setHpvVerifiedStatus(true);
 						} else {
-							log.warn("Publish bad link at {} : {} -> {} : {}", new Object[] {link.getSrc(), link.getSrcPort(), link.getDst(), link.getDstPort()});
+							//log.warn("Publish bad link at {} : {} -> {} : {}", new Object[] {link.getSrc(), link.getSrcPort(), link.getDst(), link.getDstPort()});
 							linkInfo.setHpvVerifiedStatus(false);
 						}
 					}
@@ -409,7 +409,7 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 						if (i > index) {
 							linkInfo.setHpvVerifiedStatus(true);
 						} else {
-							log.warn("Publish bad link at {} : {} -> {} : {}", new Object[] {reverseLink.getSrc(), reverseLink.getSrcPort(), reverseLink.getDst(), reverseLink.getDstPort()});
+							//log.warn("Publish bad link at {} : {} -> {} : {}", new Object[] {reverseLink.getSrc(), reverseLink.getSrcPort(), reverseLink.getDst(), reverseLink.getDstPort()});
 							linkInfo.setHpvVerifiedStatus(false);
 						}
 					}
