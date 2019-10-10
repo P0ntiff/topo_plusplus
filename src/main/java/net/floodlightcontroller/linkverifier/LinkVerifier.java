@@ -238,7 +238,7 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 					//down to one switch
 					if ((!reverse && index < 2) || (reverse && index > route.size() - 3)) {
 						log.warn("HPV: Suspicious Link = ({}, {}) -> ({}, {})", //suspicious first link
-								new Object[] {route.get(index + (reverse ? -1 : 1)).getNodeId(), //FIXME
+								new Object[] {route.get(index + (reverse ? -1 : 1)).getNodeId(),
 										route.get(index + (reverse ? -1 : 1)).getPortId(),
 										route.get(index + (reverse ? -2 : 2)).getNodeId(),
 										route.get(index + (reverse ? -2 : 2)).getPortId(),
@@ -293,7 +293,7 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 							//as this is where the packet was lost in the previous round
 							if ((!reverse && index != route.size() - 2) || (reverse && index != 1)) {
 								log.warn("HPV: Suspicious Link = ({}, {}) -> ({}, {})",
-										new Object[] {route.get(index + (reverse ? -1 : 1)).getNodeId(), //FIXME
+										new Object[] {route.get(index + (reverse ? -1 : 1)).getNodeId(),
 												route.get(index + (reverse ? -1 : 1)).getPortId(),
 												route.get(index + (reverse ? -2 : 2)).getNodeId(),
 												route.get(index + (reverse ? -2 : 2)).getPortId(),
@@ -301,7 +301,7 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 								//TODO publish results
 							} else  {
 								log.warn("HPV: All links on path have been verified");
-								publishVerification(route, true);
+								publishVerification(route, index, reverse);
 							}
 							
 							if (reverse) {
@@ -335,26 +335,71 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 
 		}
 		
-		public void publishVerification(List<NodePortTuple> route, boolean status) {
+		public void publishVerification(List<NodePortTuple> route, int index, boolean reverse) {
+			
+			//This method is damn ugly and could definitely be reworked
 			
 			long now = System.currentTimeMillis();
 			
-			for (int i = 0; i < route.size() - 2; i += 2) {
-				
-				Link link = new Link(route.get(i + 1).getNodeId(), route.get(i + 1).getPortId(), route.get(i + 2).getNodeId(), route.get(i + 2).getPortId());
-				LinkInfo linkInfo = linkEngine.getLinks().get(link);
-				if (linkInfo != null) {
-					linkInfo.setLastHpvReceivedTime(now);
-					linkInfo.setHpvVerifiedStatus(status);
+			if (!reverse) {
+			
+				for (int i = 0; i < route.size() - 2 && i <= index; i += 2) {
+					
+					Link link = new Link(route.get(i + 1).getNodeId(), route.get(i + 1).getPortId(), route.get(i + 2).getNodeId(), route.get(i + 2).getPortId());
+					LinkInfo linkInfo = linkEngine.getLinks().get(link);
+					if (linkInfo != null) {
+						linkInfo.setLastHpvReceivedTime(now);
+						if (i < index) {
+							linkInfo.setHpvVerifiedStatus(true);
+						} else {
+							log.warn("Publish bad link at {} : {} -> {} : {}", new Object[] {link.getSrc(), link.getSrcPort(), link.getDst(), link.getDstPort()});
+							linkInfo.setHpvVerifiedStatus(false);
+						}
+					}
+					
+					//do reverse link as well (assumption that all links are bidirectional)
+					
+					Link reverseLink = new Link(link.getDst(), link.getDstPort(), link.getSrc(), link.getSrcPort());
+					linkInfo = linkEngine.getLinks().get(reverseLink);
+					if (linkInfo != null) {
+						linkInfo.setLastHpvReceivedTime(now);
+						if (i < index) {
+							linkInfo.setHpvVerifiedStatus(true);
+						} else {
+							log.warn("Publish bad link at {} : {} -> {} : {}", new Object[] {link.getSrc(), link.getSrcPort(), link.getDst(), link.getDstPort()});
+							linkInfo.setHpvVerifiedStatus(false);
+						}
+					}
 				}
-				
-				//do reverse
-				
-				Link reverseLink = new Link(link.getDst(), link.getDstPort(), link.getSrc(), link.getSrcPort());
-				linkInfo = linkEngine.getLinks().get(reverseLink);
-				if (linkInfo != null) {
-					linkInfo.setLastHpvReceivedTime(now);
-					linkInfo.setHpvVerifiedStatus(status);
+			
+			} else {
+				for (int i = route.size() - 1; i > 1 && i >= index; i -= 2) {
+					
+					Link link = new Link(route.get(i - 1).getNodeId(), route.get(i - 1).getPortId(), route.get(i - 2).getNodeId(), route.get(i - 2).getPortId());
+					LinkInfo linkInfo = linkEngine.getLinks().get(link);
+					if (linkInfo != null) {
+						linkInfo.setLastHpvReceivedTime(now);
+						if (i > index) {
+							linkInfo.setHpvVerifiedStatus(true);
+						} else {
+							log.warn("Publish bad link at {} : {} -> {} : {}", new Object[] {link.getSrc(), link.getSrcPort(), link.getDst(), link.getDstPort()});
+							linkInfo.setHpvVerifiedStatus(false);
+						}
+					}
+					
+					//do reverse link as well (assumption that all links are bidirectional)
+					
+					Link reverseLink = new Link(link.getDst(), link.getDstPort(), link.getSrc(), link.getSrcPort());
+					linkInfo = linkEngine.getLinks().get(reverseLink);
+					if (linkInfo != null) {
+						linkInfo.setLastHpvReceivedTime(now);
+						if (i > index) {
+							linkInfo.setHpvVerifiedStatus(true);
+						} else {
+							log.warn("Publish bad link at {} : {} -> {} : {}", new Object[] {link.getSrc(), link.getSrcPort(), link.getDst(), link.getDstPort()});
+							linkInfo.setHpvVerifiedStatus(false);
+						}
+					}
 				}
 			}
 			
