@@ -34,7 +34,7 @@ public class StatisticsManager extends Thread {
 	
 	private boolean running;
 
-	private analysisMethod selectedMethod = analysisMethod.ADAPTIVE;
+	private analysisMethod selectedMethod = analysisMethod.LOSSY;
 
 	//  record benign link latencies
 	private ConcurrentLinkedQueue<Long> LinkLoss = new ConcurrentLinkedQueue<Long>();
