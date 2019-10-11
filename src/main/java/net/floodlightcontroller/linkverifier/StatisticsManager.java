@@ -2,6 +2,7 @@ package net.floodlightcontroller.linkverifier;
 
 
 import java.util.*;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 
 import javafx.util.Pair;
@@ -33,7 +34,10 @@ public class StatisticsManager extends Thread {
 	
 	private boolean running;
 
-	private analysisMethod selectedMethod = analysisMethod.LOSSY;
+	private analysisMethod selectedMethod = analysisMethod.ADAPTIVE;
+
+	//  record benign link latencies
+	private ConcurrentLinkedQueue<Long> LinkLoss = new ConcurrentLinkedQueue<Long>();
 
 	//TODO maybe add data structures to store the latest statistics data
 	
@@ -121,6 +125,34 @@ public class StatisticsManager extends Thread {
 					}
 				} else if(selectedMethod == analysisMethod.ADAPTIVE) {
 					//TODO
+					long loss = Math.abs(difference);
+
+					if(LinkLoss.size() <  linkEngine.getLinks().size() * 1) {
+						LinkLoss.add(Math.abs(difference));
+						log.info("The link lost is " + loss);
+
+					}
+
+					else {
+						long q1_score = quartile(LinkLoss, 25);
+						long q3_score = quartile(LinkLoss, 75);
+						long iqr = q3_score - q1_score;
+						long threshold = q3_score + 3 * iqr;
+
+
+						if(loss > threshold) {
+							log.error(String.format("WARNING: Link (%s/%s -> %s/%s) has abnormal loss - loss: %d B threshold: %d B",
+									addrFormat(sw1.getStringId()), link.getSrcPort(), addrFormat(sw2.getStringId()), link.getDst(),
+									loss, threshold));
+						}
+						else {
+							log.info(String.format("Link (%s/%s -> %s/%s) is within normal bounds - loss: %d B threshold: %d B",
+									addrFormat(sw1.getStringId()), link.getSrcPort(), addrFormat(sw2.getStringId()), link.getDst(),
+									loss, threshold));
+							LinkLoss.add(loss);
+						}
+
+					}
 				}
 
 				if (triggerWarning) {
@@ -145,6 +177,23 @@ public class StatisticsManager extends Thread {
     	}
     	
     }
+
+	//Retrieve the quartile value from an array
+	private static long quartile(Queue<Long> q, long lowerPercent) {
+
+		if (q == null || q.size() == 0) {
+			throw new IllegalArgumentException("The data array either is null or does not contain any data.");
+		}
+
+		ArrayList<Long> list = new ArrayList<Long>(q);
+
+		Collections.sort(list);
+
+		int n = (int) Math.round(list.size() * lowerPercent / 100);
+
+		return list.get(n);
+
+	}
 
     private String addrFormat(String addr){
 		StringBuilder formattedAddr = new StringBuilder();
