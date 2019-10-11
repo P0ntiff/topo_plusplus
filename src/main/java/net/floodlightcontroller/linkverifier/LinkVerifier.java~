@@ -28,6 +28,7 @@ import net.floodlightcontroller.topology.TopologyManager;
 import org.openflow.protocol.*;
 import org.openflow.protocol.action.OFAction;
 import org.openflow.protocol.action.OFActionOutput;
+import org.openflow.protocol.action.OFActionType;
 import org.openflow.util.U16;
 import org.sdnplatform.sync.internal.config.Node;
 import org.slf4j.Logger;
@@ -89,8 +90,30 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 
 				//log.info("Received {} from {}", packet.hashCode(), sw.getStringId());
 				if(packetMap.containsKey(packet.hashCode())) {
-					String[] info = packetMap.remove(packet.hashCode());
-					log.info("\n\nA hidden packet ({}) has been returned tfrom {}\n\n", packet.hashCode(), sw.getStringId());
+<<<<<<< HEAD
+					String[] info = packetMap.get(packet.hashCode());
+					if(sw.getStringId().equals(info[0])) {
+						log.info("\n\nA hidden packet ({}) has been returned from {}\n\n", packet.hashCode(), sw.getStringId());
+						packetMap.remove(packet.hashCode());
+						return Command.STOP; //gobble up hidden packet
+					}
+
+					log.info("\n\nHidden packet ({}) returned from incorrect switch {}\n\n", packet.hashCode(), sw.getStringId());
+
+=======
+					
+					String[] info = packetMap.get(packet.hashCode());
+					log.info("\n\nA hidden packet ({}) has been returned from {}\n\n", packet.hashCode(), sw.getStringId());
+
+					if(!sw.getStringId().equals(info[0])) {
+						log.warn("\nHPV: Not returned from correct end point switch");
+						return Command.CONTINUE;
+					} else {
+						packetMap.remove(packet.hashCode());
+						return Command.STOP; //gobble up the hidden packet
+					}
+					
+>>>>>>> 7129174a4f98c2790a0a4734a3447463360461d9
 				} else {
 					return Command.CONTINUE; //not a HP, so process normally
 				}
@@ -230,18 +253,20 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 
 					//down to one switch
 					if (index < 2) {
-						log.info("HPV: All links in path checked", index);
+						log.info("HPV: All links in path checked, suspicious first link", index);
 						break; // finished verifying
 					}
 
 					dstSw = provider.getSwitch(route.get(index).getNodeId());
 					if (dstSw == null) {
-						log.info("HPV: Switch {} on path is offline", dstSw.getStringId());
+						log.info("HPV: Switch {} on path is offline", route.get(index).getNodeId());
 						break;
 					}
 
 					IPacket eth = generate_payload();
-					OFPacketOut po = generate_packet_out(eth);
+					OFPacketOut po = generate_packet_out(eth, route.get(1).getPortId());
+					//not sure if this should be eth or eth.getPayload
+					//using eth gives a "data field empty" error
 					OFMessage flowMod = generate_flow_rule(eth.getPayload(), route.get(index).getPortId());
 					int hash = eth.getPayload().hashCode();
 
@@ -262,11 +287,13 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 
 						//Wait for HP return
 						this.sleep(500);
-
+						
 						if(packetMap.containsKey(hash)){
 							log.warn("HPV: HiddenPacket was not returned, reducing path by 1 switch");
+							packetMap.remove(hash);
 						}
-						else {
+						else {							
+							
 							//issue of a HPV being received by the correct switch, but after the delay
 							//migrate logic into the receive()?
 							log.warn("HPV: HiddenPacket successfully returned");
@@ -320,43 +347,44 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 			return eth;
 		}
 
-		public OFPacketOut generate_packet_out(IPacket eth){
+		public OFPacketOut generate_packet_out(IPacket eth, short outPort){
+
+			List<OFAction> actions = new ArrayList<>();
+			OFActionOutput out = (OFActionOutput) provider.getOFMessageFactory().getAction(OFActionType.OUTPUT);
+			out.setPort(outPort);
+			actions.add(out);
 
 			OFPacketOut po = (OFPacketOut) provider.getOFMessageFactory().getMessage((OFType.PACKET_OUT));
 			byte[] data = eth.serialize();
 
-			List<OFAction> actions = new ArrayList<OFAction>();
-			actions.add(new OFActionOutput(OFPort.OFPP_CONTROLLER.getValue(),
-					(short)0xFFFF));
-
-			po.setBufferId(OFPacketOut.BUFFER_ID_NONE);
-			po.setInPort(OFPort.OFPP_NONE);
 			po.setPacketData(data);
 			po.setActions(actions);
+			po.setBufferId(OFPacketOut.BUFFER_ID_NONE);
+			po.setInPort(OFPort.OFPP_NONE);
 			po.setActionsLength((short) OFActionOutput.MINIMUM_LENGTH);
-
-			// set data and data length
-			po.setLengthU(OFPacketOut.MINIMUM_LENGTH + data.length + po.getActionsLength() );
+			po.setLengthU(OFPacketOut.MINIMUM_LENGTH + data.length + po.getActionsLength());
 
 			return po;
 		}
 
-		public OFMessage generate_flow_rule(IPacket packet, short dstPort){
-			OFMatch match = new OFMatch().loadFromPacket(packet.serialize(), OFPort.OFPP_ALL.getValue());
+		public OFMessage generate_flow_rule(IPacket packet, short port){
+			OFMatch match = new OFMatch().loadFromPacket(packet.serialize(), port);
 
 			List<OFAction> actions = new ArrayList<>();
-			actions.add(new OFActionOutput(OFPort.OFPP_CONTROLLER.getValue()));
+			OFActionOutput out = (OFActionOutput) provider.getOFMessageFactory().getAction(OFActionType.OUTPUT);
+			out.setPort(OFPort.OFPP_CONTROLLER.getValue());
+			actions.add(out);
 
 			OFMessage flowMod = ((OFFlowMod) provider.getOFMessageFactory().getMessage(OFType.FLOW_MOD))
+					.setMatch(match)
 					.setActions(actions)
 					.setBufferId(OFPacketOut.BUFFER_ID_NONE)
 					.setCommand(OFFlowMod.OFPFC_ADD)
-					.setHardTimeout((short)5) //timeout rule after 5 seconds
-					.setMatch(match)
+					.setHardTimeout((short)1) //timeout rule after 5 seconds
 					.setBufferId(OFPacketOut.BUFFER_ID_NONE)
-					.setOutPort(OFPort.OFPP_NONE)
+					.setOutPort(OFPort.OFPP_CONTROLLER)
 					.setPriority(Short.MAX_VALUE)
-					.setLength((short) (OFFlowMod.MINIMUM_LENGTH + OFActionOutput.MINIMUM_LENGTH));
+					.setLength((short) (OFFlowMod.MINIMUM_LENGTH + out.getLength()));
 
 			return flowMod;
 		}
@@ -398,6 +426,7 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 		Collection<Class<? extends IFloodlightService>> l =
 				new ArrayList<Class<? extends IFloodlightService>>();
 		l.add(IFloodlightProviderService.class);
+		l.add(IRoutingService.class);
 		return l;
 
 	}
@@ -416,7 +445,8 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 
 	@Override
 	public boolean isCallbackOrderingPrereq(OFType type, String name) {
-		return (type.equals(OFType.PACKET_IN) && name.equals("linkdiscovery"));
+		return (type.equals(OFType.PACKET_IN) && (name.equals("forwarding") || name.equals("topology") ||name.equals("linkdiscovery")));
+
 	}
 
 	@Override

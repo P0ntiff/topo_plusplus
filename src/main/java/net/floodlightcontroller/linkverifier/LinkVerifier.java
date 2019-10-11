@@ -1,35 +1,23 @@
 package net.floodlightcontroller.linkverifier;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.net.URL;
-import java.net.URLConnection;
 import java.util.*;
 
-import com.google.gson.Gson;
-import com.google.gson.annotations.SerializedName;
-import com.google.gson.reflect.TypeToken;
 import net.floodlightcontroller.core.*;
-import net.floodlightcontroller.core.web.SwitchStatisticsResource;
 import net.floodlightcontroller.devicemanager.IDevice;
 import net.floodlightcontroller.devicemanager.IDeviceService;
 import net.floodlightcontroller.devicemanager.SwitchPort;
 import net.floodlightcontroller.linkdiscovery.ILinkDiscoveryService;
 import net.floodlightcontroller.linkdiscovery.LinkInfo;
-import net.floodlightcontroller.linkdiscovery.web.LinksResource;
+import net.floodlightcontroller.restserver.IRestApiService;
 import net.floodlightcontroller.routing.IRoutingService;
 import net.floodlightcontroller.routing.Link;
 import net.floodlightcontroller.routing.Route;
 import net.floodlightcontroller.topology.NodePortTuple;
-import net.floodlightcontroller.topology.TopologyInstance;
-import net.floodlightcontroller.topology.TopologyManager;
 import org.openflow.protocol.*;
 import org.openflow.protocol.action.OFAction;
 import org.openflow.protocol.action.OFActionOutput;
-import org.openflow.util.U16;
-import org.sdnplatform.sync.internal.config.Node;
+import org.openflow.protocol.action.OFActionType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import net.floodlightcontroller.core.module.IFloodlightModule;
@@ -37,11 +25,8 @@ import net.floodlightcontroller.core.module.FloodlightModuleContext;
 import net.floodlightcontroller.core.module.FloodlightModuleException;
 import net.floodlightcontroller.core.module.IFloodlightService;
 import net.floodlightcontroller.packet.*;
-import com.google.gson.Gson;
-import com.google.gson.annotations.SerializedName;
-import com.google.gson.reflect.TypeToken;
 
-
+import net.floodlightcontroller.linkverifier.web.LinkVerifierWebRoutable;
 
 /*
  * TOPOGUARD++ CLASS FOR VERIFICATION OF FLOW BETWEEN LINKS
@@ -49,6 +34,7 @@ import com.google.gson.reflect.TypeToken;
 public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloodlightService> {
 
 	// Instance Variables
+	protected IRestApiService restApi;
 	protected IFloodlightProviderService floodlightProvider;
 	protected IRoutingService routingEngine;
 	protected ILinkDiscoveryService linkEngine;
@@ -60,9 +46,9 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 	private Random rand;
 
 
-	private Map<NodePortTuple, Link> linkMap =new HashMap<>();//Key = NodePortTuple, Value=Link
-	private Map<String, IDevice> deviceMap = new HashMap<>();//Key =HostIP , Value= AttachmentPoints
-	private Map<Integer, String[]> packetMap = new HashMap<>();//Key = PacketId, Value = {time, srcSw, dstSw}
+	private Map<NodePortTuple, Link> linkMap = new HashMap<>(); //Key = NodePortTuple, Value=Link
+	private Map<String, IDevice> deviceMap = new HashMap<>(); //Key =HostIP , Value= AttachmentPoints
+	private Map<Integer, String[]> packetMap = new HashMap<>(); //Key = PacketId, Value = {time, srcSw, dstSw}
 
 	private StatisticsManager statManager;
 	private HiddenPacketWorker hpvWorker;
@@ -89,18 +75,16 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 
 				//log.info("Received {} from {}", packet.hashCode(), sw.getStringId());
 				if(packetMap.containsKey(packet.hashCode())) {
-					
-					String[] info = packetMap.get(packet.hashCode());
-					log.info("\n\nA hidden packet ({}) has been returned from {}\n\n", packet.hashCode(), sw.getStringId());
 
-					if(!sw.getStringId().equals(info[0])) {
-						log.warn("\nHPV: Not returned from correct end point switch");
-						return Command.CONTINUE;
-					} else {
+					String[] info = packetMap.get(packet.hashCode());
+					if(sw.getStringId().equals(info[0])) {
+						log.warn("HPV: A hidden packet ({}) has been returned from {}", packet.hashCode(), sw.getStringId());
 						packetMap.remove(packet.hashCode());
-						return Command.STOP; //gobble up the hidden packet
+						return Command.STOP; //gobble up hidden packet
 					}
-					
+
+					log.info("HPV: Hidden packet ({}) returned from incorrect switch {} (ignoring it)", packet.hashCode(), sw.getStringId());
+
 				} else {
 					return Command.CONTINUE; //not a HP, so process normally
 				}
@@ -192,7 +176,7 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 				if(deviceMap.size() < 2) {
 					log.info("HPV: Not enough devices detected...");
 					try{
-						this.sleep(1000);
+						Thread.sleep(1000);
 					} catch (InterruptedException e){
 						log.info("Thread interrupted");
 					}
@@ -207,10 +191,22 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 
 
 				//Calculate route between these hosts
-				IOFSwitch srcSw =  provider.getSwitch((deviceMap.get(h1_IP).getAttachmentPoints()[0]).getSwitchDPID());
-				IOFSwitch dstSw = provider.getSwitch((deviceMap.get(h2_IP).getAttachmentPoints()[0]).getSwitchDPID());
-				List<NodePortTuple> route = get_route((deviceMap.get(h1_IP).getAttachmentPoints()[0]),
-						(deviceMap.get(h2_IP).getAttachmentPoints()[0])).getPath();
+				IOFSwitch srcSw, dstSw;
+				try {
+					srcSw =  provider.getSwitch((deviceMap.get(h1_IP).getAttachmentPoints()[0]).getSwitchDPID());
+					dstSw = provider.getSwitch((deviceMap.get(h2_IP).getAttachmentPoints()[0]).getSwitchDPID());
+				} catch (ArrayIndexOutOfBoundsException e) {
+					log.info("HPV: No attachment point");
+					continue;
+				}
+				
+				List<NodePortTuple> route;				
+				try {
+					route = get_route((deviceMap.get(h1_IP).getAttachmentPoints()[0]), (deviceMap.get(h2_IP).getAttachmentPoints()[0])).getPath();
+				} catch (NullPointerException e) {
+					log.info("HPV: No route found between {} and {}", h1_IP, h2_IP);
+					continue;
+				}
 
 				log.warn("HPV: {} -> {}, Route Size = {}",
 						new Object[] {h1_IP,
@@ -233,15 +229,36 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 				//Begin verifying links in path
 				boolean complete = false; //has the verification process completed?
 				int index = route.size() - 2; //route.size - 2, in order to get the packets entry port on the last switch
+				boolean reverse = false; //reverse the verification direction
 
 				while (!complete) {
 
-					log.info("HPV: Checking Index in Route {}/{}", index, route.size() - 1);
+					log.info("HPV: Destination set to index in route {}/{}", index, route.size() - 1);
 
 					//down to one switch
-					if (index < 2) {
-						log.info("HPV: All links in path checked, suspicious first link", index);
-						break; // finished verifying
+					if ((!reverse && index < 2) || (reverse && index > route.size() - 3)) {
+						log.warn("HPV: Suspicious Link = ({}, {}) -> ({}, {})", //suspicious first link
+								new Object[] {route.get(index + (reverse ? -1 : 1)).getNodeId(),
+										route.get(index + (reverse ? -1 : 1)).getPortId(),
+										route.get(index + (reverse ? -2 : 2)).getNodeId(),
+										route.get(index + (reverse ? -2 : 2)).getPortId(),
+								});
+						publishVerification(route, index, reverse);
+						if (reverse) {
+							complete = true;
+						} else {
+							log.warn("HPV: Reversing direction of verification process");
+							reverse = true;
+							index = 1;
+							srcSw = provider.getSwitch(route.get(route.size() - 2).getNodeId());
+							
+							//swap IP addresses so the packet is correct
+							String tmp = h1_IP;
+							h1_IP = h2_IP;
+							h2_IP = tmp;
+							tmp = null;
+						}
+						continue;
 					}
 
 					dstSw = provider.getSwitch(route.get(index).getNodeId());
@@ -250,9 +267,12 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 						break;
 					}
 
-					IPacket eth = generate_payload();
-					OFPacketOut po = generate_packet_out(eth);
-					OFMessage flowMod = generate_flow_rule(eth.getPayload(), route.get(index).getPortId());
+					Ethernet eth = generate_payload();
+					OFPacketOut po;
+					if (!reverse) po = generate_packet_out(eth, route.get(0).getPortId(), route.get(1).getPortId());
+					else po = generate_packet_out(eth, route.get(route.size() - 1).getPortId(), route.get(route.size() - 2).getPortId());
+				
+					OFMessage flowMod = generate_flow_rule(eth, route.get(index).getPortId());
 					int hash = eth.getPayload().hashCode();
 
 					try {
@@ -260,6 +280,9 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 						log.info("HPV: Sending Flow-Mod to {}", dstSw.getStringId());
 						dstSw.write(flowMod, null);
 						dstSw.flush();
+						
+						//give the rule a chance to install
+						Thread.sleep(200);
 
 						//Send Hidden Packet
 						log.info("HPV: Sending packet ({}) to {}", hash, srcSw.getStringId());
@@ -271,31 +294,43 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 						packetMap.put(hash, info);
 
 						//Wait for HP return
-						this.sleep(500);
+						Thread.sleep(1000);
 						
-						if(packetMap.containsKey(hash)){
-							log.warn("HPV: HiddenPacket was not returned, reducing path by 1 switch");
+						if (packetMap.containsKey(hash)){
+							log.warn("HPV: HiddenPacket was not returned, reducing path by 1 link");
 							packetMap.remove(hash);
-						}
-						else {							
-							
-							//issue of a HPV being received by the correct switch, but after the delay
-							//migrate logic into the receive()?
+						} else {							
 							log.warn("HPV: HiddenPacket successfully returned");
 
 							//if this is not the end-point switch,
 							//then the next hop in the path is suspicious
 							//as this is where the packet was lost in the previous round
-							if (index != route.size() - 2) {
-								log.warn("\n\n\nHPV: Suspicious Link = ({}, {}) -> ({}, {})\n\n\n",
-										new Object[] {route.get(index).getNodeId(),
-												route.get(index).getPortId(),
-												route.get(index + 1).getNodeId(),
-												route.get(index + 1).getPortId(),
+							if ((!reverse && index != route.size() - 2) || (reverse && index != 1)) {
+								log.warn("HPV: Suspicious Link = ({}, {}) -> ({}, {})",
+										new Object[] {route.get(index + (reverse ? -1 : 1)).getNodeId(),
+												route.get(index + (reverse ? -1 : 1)).getPortId(),
+												route.get(index + (reverse ? -2 : 2)).getNodeId(),
+												route.get(index + (reverse ? -2 : 2)).getPortId(),
 										});
+							} else  {
+								log.warn("HPV: All links on path have been verified");
+								publishVerification(route, index, reverse);
 							}
-							else log.warn("All links on path have been verified");
-							complete = true;
+							
+							if (reverse) {
+								complete = true;
+							} else {
+								log.warn("HPV: Reversing direction of verification process");
+								reverse = true;
+								index = -1;
+								srcSw = provider.getSwitch(route.get(route.size() - 2).getNodeId());
+								
+								//swap IP addresses so the packet is correct
+								String tmp = h1_IP;
+								h1_IP = h2_IP;
+								h2_IP = tmp;
+								tmp = null;
+							}
 						}
 
 					} catch (IOException e) {
@@ -305,18 +340,89 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 						//interrupted thread from receive method() to force wake up
 						log.error("HPV Thread Interruption");
 					}
-					index -= 2; //-2 to get entry port
+					
+					index += reverse ? 2 : -2; // a switch consumes two indexes
 				}
 
 			}
 
 		}
+		
+		public void publishVerification(List<NodePortTuple> route, int index, boolean reverse) {
+			
+			//This method is damn ugly and could definitely be reworked
+			
+			long now = System.currentTimeMillis();
+			
+			if (!reverse) {
+			
+				for (int i = 0; i < route.size() - 2 && i <= index; i += 2) {
+					
+					Link link = new Link(route.get(i + 1).getNodeId(), route.get(i + 1).getPortId(), route.get(i + 2).getNodeId(), route.get(i + 2).getPortId());
+					LinkInfo linkInfo = linkEngine.getLinks().get(link);
+					if (linkInfo != null) {
+						linkInfo.setLastHpvReceivedTime(now);
+						if (i < index) {
+							linkInfo.setHpvVerifiedStatus(true);
+						} else {
+							//log.warn("Publish bad link at {} : {} -> {} : {}", new Object[] {link.getSrc(), link.getSrcPort(), link.getDst(), link.getDstPort()});
+							linkInfo.setHpvVerifiedStatus(false);
+						}
+					}
+					
+					//do reverse link as well (assumption that all links are bidirectional)
+					
+					Link reverseLink = new Link(link.getDst(), link.getDstPort(), link.getSrc(), link.getSrcPort());
+					linkInfo = linkEngine.getLinks().get(reverseLink);
+					if (linkInfo != null) {
+						linkInfo.setLastHpvReceivedTime(now);
+						if (i < index) {
+							linkInfo.setHpvVerifiedStatus(true);
+						} else {
+							//log.warn("Publish bad link at {} : {} -> {} : {}", new Object[] {link.getSrc(), link.getSrcPort(), link.getDst(), link.getDstPort()});
+							linkInfo.setHpvVerifiedStatus(false);
+						}
+					}
+				}
+			
+			} else {
+				for (int i = route.size() - 1; i > 1 && i >= index; i -= 2) {
+					
+					Link link = new Link(route.get(i - 1).getNodeId(), route.get(i - 1).getPortId(), route.get(i - 2).getNodeId(), route.get(i - 2).getPortId());
+					LinkInfo linkInfo = linkEngine.getLinks().get(link);
+					if (linkInfo != null) {
+						linkInfo.setLastHpvReceivedTime(now);
+						if (i > index) {
+							linkInfo.setHpvVerifiedStatus(true);
+						} else {
+							//log.warn("Publish bad link at {} : {} -> {} : {}", new Object[] {link.getSrc(), link.getSrcPort(), link.getDst(), link.getDstPort()});
+							linkInfo.setHpvVerifiedStatus(false);
+						}
+					}
+					
+					//do reverse link as well (assumption that all links are bidirectional)
+					
+					Link reverseLink = new Link(link.getDst(), link.getDstPort(), link.getSrc(), link.getSrcPort());
+					linkInfo = linkEngine.getLinks().get(reverseLink);
+					if (linkInfo != null) {
+						linkInfo.setLastHpvReceivedTime(now);
+						if (i > index) {
+							linkInfo.setHpvVerifiedStatus(true);
+						} else {
+							//log.warn("Publish bad link at {} : {} -> {} : {}", new Object[] {reverseLink.getSrc(), reverseLink.getSrcPort(), reverseLink.getDst(), reverseLink.getDstPort()});
+							linkInfo.setHpvVerifiedStatus(false);
+						}
+					}
+				}
+			}
+			
+		}
 
-		public IPacket generate_payload(){
+		public Ethernet generate_payload(){
 			byte[] randomBytes = new byte[15];
 			new Random().nextBytes(randomBytes);
 
-			IPacket eth = new Ethernet()
+			Ethernet eth = (Ethernet) new Ethernet()
 					.setSourceMACAddress(deviceMap.get(h1_IP).getMACAddressString())
 					.setDestinationMACAddress(deviceMap.get(h2_IP).getMACAddressString())
 					.setEtherType(Ethernet.TYPE_IPv4)
@@ -325,50 +431,49 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 									.setTtl((byte) 128)
 									.setSourceAddress(h1_IP)
 									.setDestinationAddress(h2_IP)
+									.setProtocol((byte) 17)
 									.setPayload(new UDP()
-											.setSourcePort((short) deviceMap.get(h1_IP).getAttachmentPoints()[0].getPort())
-											.setDestinationPort((short) deviceMap.get(h2_IP).getAttachmentPoints()[0].getPort())
+											.setSourcePort((short) 20)
+											.setDestinationPort((short) 30)
 											.setPayload(new Data(randomBytes))));
 			return eth;
 		}
 
-		public OFPacketOut generate_packet_out(IPacket eth){
-
-			OFPacketOut po = (OFPacketOut) provider.getOFMessageFactory().getMessage((OFType.PACKET_OUT));
+		public OFPacketOut generate_packet_out(Ethernet eth, short inPort, short outPort){
 			byte[] data = eth.serialize();
-
-			List<OFAction> actions = new ArrayList<OFAction>();
-			actions.add(new OFActionOutput(OFPort.OFPP_CONTROLLER.getValue(),
-					(short)0xFFFF));
-
+			OFPacketOut po = (OFPacketOut) floodlightProvider.getOFMessageFactory()
+                    .getMessage(OFType.PACKET_OUT);
 			po.setBufferId(OFPacketOut.BUFFER_ID_NONE);
-			po.setInPort(OFPort.OFPP_NONE);
-			po.setPacketData(data);
+	        //po.setInPort(OFPort.OFPP_NONE);
+	        po.setInPort(inPort);
+	        po.setLengthU(OFPacketOut.MINIMUM_LENGTH + data.length);
+	        po.setPacketData(data);
+			List<OFAction> actions = new ArrayList<>();
+			OFActionOutput out = new OFActionOutput(outPort, (short) 0);
+			actions.add(out);
 			po.setActions(actions);
-			po.setActionsLength((short) OFActionOutput.MINIMUM_LENGTH);
-
-			// set data and data length
-			po.setLengthU(OFPacketOut.MINIMUM_LENGTH + data.length + po.getActionsLength() );
-
+			po.setActionsLength(out.getLength());
+			po.setLengthU(po.getLengthU() + po.getActionsLength());
 			return po;
 		}
 
-		public OFMessage generate_flow_rule(IPacket packet, short dstPort){
-			OFMatch match = new OFMatch().loadFromPacket(packet.serialize(), OFPort.OFPP_ALL.getValue());
+		public OFMessage generate_flow_rule(IPacket packet, short inPort){
+			OFMatch match = new OFMatch().loadFromPacket(packet.serialize(), inPort);
 
 			List<OFAction> actions = new ArrayList<>();
-			actions.add(new OFActionOutput(OFPort.OFPP_CONTROLLER.getValue()));
-
+			OFActionOutput out = new OFActionOutput(OFPort.OFPP_CONTROLLER.getValue());
+			out.setMaxLength((short)0xffff);
+			actions.add(out);
+			
 			OFMessage flowMod = ((OFFlowMod) provider.getOFMessageFactory().getMessage(OFType.FLOW_MOD))
-					.setActions(actions)
-					.setBufferId(OFPacketOut.BUFFER_ID_NONE)
-					.setCommand(OFFlowMod.OFPFC_ADD)
-					.setHardTimeout((short)1) //timeout rule after 1 seconds
 					.setMatch(match)
-					.setBufferId(OFPacketOut.BUFFER_ID_NONE)
-					.setOutPort(OFPort.OFPP_NONE)
+					.setActions(actions)
+					.setCommand(OFFlowMod.OFPFC_ADD)
+					.setHardTimeout((short) 1) //timeout rule after 5 seconds
+					.setIdleTimeout((short) 0)
 					.setPriority(Short.MAX_VALUE)
-					.setLength((short) (OFFlowMod.MINIMUM_LENGTH + OFActionOutput.MINIMUM_LENGTH));
+					.setBufferId(OFPacketOut.BUFFER_ID_NONE)
+					.setLengthU(OFFlowMod.MINIMUM_LENGTH+OFActionOutput.MINIMUM_LENGTH);
 
 			return flowMod;
 		}
@@ -387,6 +492,8 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 	public void init(FloodlightModuleContext cntx) throws FloodlightModuleException {
 		floodlightProvider = cntx.getServiceImpl(IFloodlightProviderService.class);
 		routingEngine = cntx.getServiceImpl(IRoutingService.class);
+		restApi = cntx.getServiceImpl(IRestApiService.class);
+
 		linkEngine = cntx.getServiceImpl(ILinkDiscoveryService.class);
 		deviceEngine = cntx.getServiceImpl(IDeviceService.class);
 
@@ -401,6 +508,8 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 	public void startUp(FloodlightModuleContext arg0) throws FloodlightModuleException {
 		// OpenFlow messages we want to receive
 		floodlightProvider.addOFMessageListener(OFType.PACKET_IN, this);
+		restApi.addRestletRoutable(new LinkVerifierWebRoutable());
+
 		statManager.start();
 		hpvWorker.start();
 	}
@@ -411,6 +520,9 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 				new ArrayList<Class<? extends IFloodlightService>>();
 		l.add(IFloodlightProviderService.class);
 		l.add(IRoutingService.class);
+		l.add(IRestApiService.class);
+		l.add(ILinkDiscoveryService.class);
+
 		return l;
 
 	}
@@ -429,9 +541,8 @@ public class LinkVerifier implements IOFMessageListener, IFloodlightModule<IFloo
 
 	@Override
 	public boolean isCallbackOrderingPrereq(OFType type, String name) {
-        return (type.equals(OFType.PACKET_IN) &&
-                (name.equals("topology") ||
-                 name.equals("devicemanager")));
+		return (type.equals(OFType.PACKET_IN) && (name.equals("forwarding") || name.equals("topology") ||name.equals("linkdiscovery")));
+
 	}
 
 	@Override

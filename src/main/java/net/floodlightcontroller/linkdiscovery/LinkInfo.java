@@ -30,6 +30,30 @@ public class LinkInfo {
         this.lastBddpReceivedTime = lastBddpReceivedTime;
     }
 
+    public LinkInfo(Long firstSeenTime,
+                    Long lastLldpReceivedTime,
+                    Long lastBddpReceivedTime,
+                    Long currentKnownDelay) {
+        super();
+        this.firstSeenTime = firstSeenTime;
+        this.lastLldpReceivedTime = lastLldpReceivedTime;
+        this.lastBddpReceivedTime = lastBddpReceivedTime;
+        this.currentKnownDelay = currentKnownDelay;
+    }
+
+    public LinkInfo(Long firstSeenTime,
+                    Long lastLldpReceivedTime,
+                    Long lastBddpReceivedTime,
+                    Long currentKnownDelay,
+                    Long lastHpvReceivedTime) {
+        super();
+        this.firstSeenTime = firstSeenTime;
+        this.lastLldpReceivedTime = lastLldpReceivedTime;
+        this.lastBddpReceivedTime = lastBddpReceivedTime;
+        this.currentKnownDelay = currentKnownDelay;
+        this.lastHpvReceivedTime = lastHpvReceivedTime;
+    }
+
     /*
      * Do not use this constructor. Used primarily for JSON
      * Serialization/Deserialization
@@ -38,17 +62,26 @@ public class LinkInfo {
         this.firstSeenTime = null;
         this.lastLldpReceivedTime = null;
         this.lastBddpReceivedTime = null;
+        this.currentKnownDelay = null;
+        this.lastHpvReceivedTime = null;
+        this.hpvVerifiedStatus = false;
     }
 
     public LinkInfo(LinkInfo fromLinkInfo) {
         this.firstSeenTime = fromLinkInfo.getFirstSeenTime();
         this.lastLldpReceivedTime = fromLinkInfo.getUnicastValidTime();
         this.lastBddpReceivedTime = fromLinkInfo.getMulticastValidTime();
+        this.currentKnownDelay = fromLinkInfo.getCurrentKnownDelay();
+        this.lastHpvReceivedTime = fromLinkInfo.getLastHpvReceivedTime();
+        this.hpvVerifiedStatus = fromLinkInfo.getHpvVerifiedStatus();
     }
 
     protected Long firstSeenTime;
     protected Long lastLldpReceivedTime; /* Standard LLLDP received time */
     protected Long lastBddpReceivedTime; /* Modified LLDP received time  */
+    protected Long currentKnownDelay = 0L;   /* TopoGuard+ link delay information */
+    protected Long lastHpvReceivedTime = 0L;    /* TopoGuard++ HPV information */
+    protected boolean hpvVerifiedStatus = false;   /* TopoGuard++ HPV status */
 
     /** The port states stored here are topology's last knowledge of
      * the state of the port. This mostly mirrors the state
@@ -84,6 +117,30 @@ public class LinkInfo {
         this.lastBddpReceivedTime = multicastValidTime;
     }
 
+    public Long getCurrentKnownDelay() {
+        return currentKnownDelay;
+    }
+
+    public void setCurrentKnownDelay(Long currentKnownDelay) {
+        this.currentKnownDelay = currentKnownDelay;
+    }
+
+    public Long getLastHpvReceivedTime() {
+        return lastHpvReceivedTime;
+    }
+
+    public void setLastHpvReceivedTime(Long lastHpvReceivedTime) {
+        this.lastHpvReceivedTime = lastHpvReceivedTime;
+    }
+
+    public boolean getHpvVerifiedStatus() {
+        return hpvVerifiedStatus;
+    }
+
+    public void setHpvVerifiedStatus(boolean hpvVerifiedStatus) {
+        this.hpvVerifiedStatus = hpvVerifiedStatus;
+    }
+
     @JsonIgnore
     public LinkType getLinkType() {
         if (lastLldpReceivedTime != null) {
@@ -104,6 +161,8 @@ public class LinkInfo {
         result = prime * result + ((firstSeenTime == null) ? 0 : firstSeenTime.hashCode());
         result = prime * result + ((lastLldpReceivedTime == null) ? 0 : lastLldpReceivedTime.hashCode());
         result = prime * result + ((lastBddpReceivedTime == null) ? 0 : lastBddpReceivedTime.hashCode());
+        result = prime * result + ((currentKnownDelay == null) ? 0 : currentKnownDelay.hashCode());
+        result = prime * result + ((lastHpvReceivedTime == null) ? 0 : lastHpvReceivedTime.hashCode());
         return result;
     }
 
@@ -138,6 +197,22 @@ public class LinkInfo {
         } else if (!lastBddpReceivedTime.equals(other.lastBddpReceivedTime))
             return false;
 
+        if (currentKnownDelay == null) {
+            if (other.currentKnownDelay != null)
+                return false;
+        } else if (!currentKnownDelay.equals(other.currentKnownDelay))
+            return false;
+
+        if (lastHpvReceivedTime == null) {
+            if (other.lastHpvReceivedTime != null)
+                return false;
+        } else if (!lastHpvReceivedTime.equals(other.lastHpvReceivedTime))
+            return false;
+
+        if (other.hpvVerifiedStatus != hpvVerifiedStatus) {
+            return false;
+        }
+
         return true;
     }
 
@@ -149,6 +224,8 @@ public class LinkInfo {
     public String toString() {
         return "LinkInfo [unicastValidTime=" + ((lastLldpReceivedTime == null) ? "null" : lastLldpReceivedTime)
                 + ", multicastValidTime=" + ((lastBddpReceivedTime == null) ? "null" : lastBddpReceivedTime)
-                + "]";
+                + ", currentKnownDelay=" + ((currentKnownDelay == null) ? "null" : currentKnownDelay)
+                + ", lastHpvReceivedTime=" + ((lastHpvReceivedTime == null) ? "null" : lastHpvReceivedTime)
+                + ", lastHpvReceivedTime=" + hpvVerifiedStatus + "]";
     }
 }
