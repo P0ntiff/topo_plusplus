@@ -18,6 +18,11 @@ import org.slf4j.LoggerFactory;
 import net.floodlightcontroller.core.IOFSwitch;
 import net.floodlightcontroller.routing.Link;
 
+enum analysisMethod {
+	STRICT,
+	LOSSY,
+	ADAPTIVE
+}
 
 public class StatisticsManager extends Thread {
 	
@@ -27,7 +32,9 @@ public class StatisticsManager extends Thread {
 	protected static Logger log;
 	
 	private boolean running;
-	
+
+	private analysisMethod selectedMethod = analysisMethod.LOSSY;
+
 	//TODO maybe add data structures to store the latest statistics data
 	
 	public StatisticsManager(ILinkDiscoveryService linkEngine, IFloodlightProviderService floodlightProvider) {
@@ -40,7 +47,6 @@ public class StatisticsManager extends Thread {
     	running = true;
 
     	InternalStatisticsGetter stats = new InternalStatisticsGetter(provider);
-
 
         Map<String, ArrayList<Long>> linkPackets = new HashMap<>();
 
@@ -76,18 +82,16 @@ public class StatisticsManager extends Thread {
 				long prevRecv = 0;
 
 
+					if (linkPackets.containsKey(linkKey)) {
+						ArrayList<Long> previous = linkPackets.get(linkKey);
+						prevSent = previous.get(0);
+						prevRecv = previous.get(1);
+						previous.set(0, sent);
+						previous.set(1, recv);
 
-
-				if(linkPackets.containsKey(linkKey)){
-				    ArrayList<Long> previous = linkPackets.get(linkKey);
-				    prevSent = previous.get(0);
-				    prevRecv = previous.get(1);
-				    previous.set(0, sent);
-                    previous.set(1, recv);
-
-                } else{
-				    linkPackets.put(linkKey, new ArrayList<>(Arrays.asList(sent, recv)));
-                }
+					} else {
+						linkPackets.put(linkKey, new ArrayList<>(Arrays.asList(sent, recv)));
+					}
 
 
 
@@ -100,36 +104,34 @@ public class StatisticsManager extends Thread {
 				infoOutput.append(String.format("(%s, %s): received %sB.\n",
 						sw2.getStringId(), sw2Stats.getPortNumber(), recv));
 
-
 				long diffSent = (sent - prevSent);
 				long diffRecv = (recv - prevRecv);
 				long difference = diffSent - diffRecv;
 
-				if(Math.abs(difference) - 200 > ((diffSent + diffRecv) * 0.1)){
+				boolean triggerWarning = false;
+
+
+				if(selectedMethod == analysisMethod.STRICT){
+					if(Math.abs(difference) > 0 ){
+						triggerWarning = true;
+					}
+				} else if(selectedMethod == analysisMethod.LOSSY) {
+					if(Math.abs(difference) - 200 > ((diffSent + diffRecv) * 0.1)){
+						triggerWarning = true;
+					}
+				} else if(selectedMethod == analysisMethod.ADAPTIVE) {
+					//TODO
+				}
+
+				if (triggerWarning) {
 					warnOutput.append(String.format("WARNING: Link (%s/%s -> %s/%s) has inconsistent packets - %d sent vs %d received, since last round.",
-							addrFormat(sw1.getStringId()),link.getSrcPort(), addrFormat(sw2.getStringId()), link.getDst(),
+							addrFormat(sw1.getStringId()), link.getSrcPort(), addrFormat(sw2.getStringId()), link.getDst(),
 							diffSent, diffRecv));
 					hasWarning = true;
-				} else{
+				} else {
 					infoOutput.append("OKAY: SW1 received matches SW2 transmitted\n");
 				}
 
-//				warningOutput.append(String.format("\n\n-- STATS for (switch,port) pairs (%s, %s) and (%s, %s) --\n",
-//						sw1.getStringId(), link.getSrcPort(), sw2.getStringId(), link.getDstPort()));
-
-
-				// Not needed as reverse treated as seperate link and checked anyway
-//				if(sw2Stats.getReceiveBytes() != sw1Stats.getTransmitBytes()){
-//					infoOutput.append("WARNING: SW2 received DOES NOT match SW1 transmitted\n");
-//					warnOutput.append(String.format("\nWARNING: Link (%s/%s - %s/%s) has inconsistent packets - %d vs %d",
-//							addrFormat(sw1.getStringId()),link.getSrcPort(), addrFormat(sw2.getStringId()), link.getDst(),
-//							sw2Stats.getReceiveBytes(), sw1Stats.getTransmitBytes()));
-//				} else{
-//					infoOutput.append("OKAY: SW2 received matches SW1 transmitted\n");
-//				}
-
-
-				//log.info(infoOutput.toString());
 				if(hasWarning) {
 					log.warn(warnOutput.toString());
 				} else {
