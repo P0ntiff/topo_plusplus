@@ -65,6 +65,7 @@ public class LinkInfo {
         this.currentKnownDelay = null;
         this.lastHpvReceivedTime = null;
         this.hpvVerifiedStatus = false;
+        this.statsVerifiedStatus = false;
     }
 
     public LinkInfo(LinkInfo fromLinkInfo) {
@@ -74,6 +75,7 @@ public class LinkInfo {
         this.currentKnownDelay = fromLinkInfo.getCurrentKnownDelay();
         this.lastHpvReceivedTime = fromLinkInfo.getLastHpvReceivedTime();
         this.hpvVerifiedStatus = fromLinkInfo.getHpvVerifiedStatus();
+        this.statsVerifiedStatus = fromLinkInfo.getStatsVerifiedStatus();
     }
 
     protected Long firstSeenTime;
@@ -82,6 +84,7 @@ public class LinkInfo {
     protected Long currentKnownDelay = 0L;   /* TopoGuard+ link delay information */
     protected Long lastHpvReceivedTime = 0L;    /* TopoGuard++ HPV information */
     protected boolean hpvVerifiedStatus = false;   /* TopoGuard++ HPV status */
+    protected boolean statsVerifiedStatus = false;   /* TopoGuard++ Statistics Verification status */
 
     /** The port states stored here are topology's last knowledge of
      * the state of the port. This mostly mirrors the state
@@ -139,6 +142,14 @@ public class LinkInfo {
 
     public void setHpvVerifiedStatus(boolean hpvVerifiedStatus) {
         this.hpvVerifiedStatus = hpvVerifiedStatus;
+    }
+
+    public boolean getStatsVerifiedStatus() {
+        return statsVerifiedStatus;
+    }
+
+    public void setStatsVerifiedStatus(boolean statsVerifiedStatus) {
+        this.statsVerifiedStatus = statsVerifiedStatus;
     }
 
     @JsonIgnore
@@ -213,6 +224,10 @@ public class LinkInfo {
             return false;
         }
 
+        if (other.statsVerifiedStatus != statsVerifiedStatus) {
+            return false;
+        }
+
         return true;
     }
 
@@ -226,6 +241,8 @@ public class LinkInfo {
                 + ", multicastValidTime=" + ((lastBddpReceivedTime == null) ? "null" : lastBddpReceivedTime)
                 + ", currentKnownDelay=" + ((currentKnownDelay == null) ? "null" : currentKnownDelay)
                 + ", lastHpvReceivedTime=" + ((lastHpvReceivedTime == null) ? "null" : lastHpvReceivedTime)
-                + ", lastHpvReceivedTime=" + hpvVerifiedStatus + "]";
+                + ", hpvVerifiedStatus=" + hpvVerifiedStatus + "]"
+                + ", statsVerifiedStatus=" + statsVerifiedStatus + "]";
+
     }
 }

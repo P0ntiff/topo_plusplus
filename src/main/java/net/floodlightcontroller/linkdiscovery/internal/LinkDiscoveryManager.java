@@ -1499,6 +1499,7 @@ public class LinkDiscoveryManager implements IOFMessageListener,
         newInfo.setCurrentKnownDelay(oldInfo.getCurrentKnownDelay());
         newInfo.setLastHpvReceivedTime(oldInfo.getLastHpvReceivedTime());
         newInfo.setHpvVerifiedStatus(oldInfo.getHpvVerifiedStatus());
+        newInfo.setStatsVerifiedStatus(oldInfo.getStatsVerifiedStatus());
 
         Long oldTime = oldInfo.getUnicastValidTime();
         Long newTime = newInfo.getUnicastValidTime();

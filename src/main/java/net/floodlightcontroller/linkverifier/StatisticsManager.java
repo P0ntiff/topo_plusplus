@@ -8,6 +8,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import javafx.util.Pair;
 import net.floodlightcontroller.core.IFloodlightProviderService;
 import net.floodlightcontroller.linkdiscovery.ILinkDiscoveryService;
+import net.floodlightcontroller.linkdiscovery.LinkInfo;
 import net.floodlightcontroller.routing.Link;
 import net.floodlightcontroller.linkverifier.InternalStatisticsGetter;
 
@@ -155,13 +156,20 @@ public class StatisticsManager extends Thread {
 					}
 				}
 
+				LinkInfo linkInfo = linkEngine.getLinks().get(link);
 				if (triggerWarning) {
 					warnOutput.append(String.format("WARNING: Link (%s/%s -> %s/%s) has inconsistent packets - %d sent vs %d received, since last round.",
 							addrFormat(sw1.getStringId()), link.getSrcPort(), addrFormat(sw2.getStringId()), link.getDst(),
 							diffSent, diffRecv));
 					hasWarning = true;
+					if (linkInfo != null) {
+						linkInfo.setStatsVerifiedStatus(false);
+					}
 				} else {
 					infoOutput.append("OKAY: SW1 received matches SW2 transmitted\n");
+					if (linkInfo != null) {
+						linkInfo.setStatsVerifiedStatus(true);
+					}
 				}
 
 				if(hasWarning) {
