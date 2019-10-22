@@ -1495,24 +1495,14 @@ public class LinkDiscoveryManager implements IOFMessageListener,
             if (oldInfo.getMulticastValidTime() != null) {
                 newInfo.setMulticastValidTime(oldInfo.getMulticastValidTime());
             }
-        } else if (newInfo.getCurrentKnownDelay() == 0L) {
-            if (oldInfo.getCurrentKnownDelay() != 0L) {
-                newInfo.setCurrentKnownDelay(oldInfo.getCurrentKnownDelay());
-            }
-        } else if (newInfo.getLastHpvReceivedTime() == 0L) {
-            if (oldInfo.getLastHpvReceivedTime() != 0L) {
-                newInfo.setLastHpvReceivedTime(oldInfo.getLastHpvReceivedTime());
-            }
         }
+        newInfo.setCurrentKnownDelay(oldInfo.getCurrentKnownDelay());
+        newInfo.setLastHpvReceivedTime(oldInfo.getLastHpvReceivedTime());
+        newInfo.setHpvVerifiedStatus(oldInfo.getHpvVerifiedStatus());
 
         Long oldTime = oldInfo.getUnicastValidTime();
         Long newTime = newInfo.getUnicastValidTime();
 
-        Long oldDelay = oldInfo.getCurrentKnownDelay();
-        Long newDelay = oldInfo.getCurrentKnownDelay();
-
-        Long oldHpvTime = oldInfo.getLastHpvReceivedTime();
-        Long newHpvTime = newInfo.getLastHpvReceivedTime();
 
         // the link has changed its state between openflow and
         // non-openflow
@@ -1522,16 +1512,7 @@ public class LinkDiscoveryManager implements IOFMessageListener,
         } else if (oldTime == null & newTime != null) {
             linkChanged = true;
         }
-        if (oldDelay != 0L & newDelay != 0L) {
-            linkChanged = true;
-        } else if (oldDelay == 0L & newDelay != 0L) {
-            linkChanged = true;
-        }
-        if (oldHpvTime != 0L & newHpvTime != 0L) {
-            linkChanged = true;
-        } else if (oldHpvTime == 0L & newHpvTime != 0L) {
-            linkChanged = true;
-        }
+
         
         return linkChanged;
     }
@@ -1550,7 +1531,7 @@ public class LinkDiscoveryManager implements IOFMessageListener,
 
         lock.writeLock().lock();
         try {
-            // put the new info. if an old info exists, it will be returned.
+            // put the new info. if an old info exists, it will be returned.oldInfo
             LinkInfo oldInfo = links.put(lt, newInfo);
             if (oldInfo != null
                     && oldInfo.getFirstSeenTime() < newInfo.getFirstSeenTime())
