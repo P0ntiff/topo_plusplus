@@ -145,6 +145,7 @@ public class StatisticsManager extends Thread {
 							log.error(String.format("WARNING: Link (%s/%s -> %s/%s) has abnormal loss - loss: %d B threshold: %d B",
 									addrFormat(sw1.getStringId()), link.getSrcPort(), addrFormat(sw2.getStringId()), link.getDst(),
 									loss, threshold));
+							triggerWarning = true;
 						}
 						else {
 							log.info(String.format("Link (%s/%s -> %s/%s) is within normal bounds - loss: %d B threshold: %d B",
